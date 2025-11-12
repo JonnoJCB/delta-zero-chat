@@ -197,7 +197,7 @@ if user_input:
     st.session_state.chat_history.append({"sender": "bot", "message": response})
 
     # Play MSN-style ping sound
-    st.audio("https://www.myinstants.com/media/sounds/msn.mp3", format="audio/mp3", start_time=0)
+    st.audio("msn_ping.mp3", format="audio/mp3", start_time=0)
 
     # Clear input
     st.session_state.user_input = ""
@@ -214,3 +214,4 @@ if st.checkbox("Use previous messages"):
 
 # Show total encrypted chat count
 st.sidebar.info(f"Total encrypted chats stored: {len(agent.memory)}")
+
