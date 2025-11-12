@@ -48,13 +48,13 @@ def load_conversations():
                             convs.append({"user": user_msg, "bot": bot_msg})
             except Exception as e:
                 st.error(f"Could not read {filename}: {e}")
-    # DEBUG: Print count to console (only you see this)
+    # DEBUG: Only you see this in console
     if convs:
-        print(f"[DEBUG] Loaded {len(convs)} movie conversation pairs from {conv_dir}")
+        print(f"[DEBUG] Loaded {len(convs)} movie conversation pairs")
     return convs
 
 # ==============================================================
-# 2. DeltaAgent – Adaptive with per-slot replies + TIGHT movie context
+# 2. DeltaAgent – Adaptive with TIGHT movie context (3+ words)
 # ==============================================================
 class DeltaAgent:
     def __init__(
@@ -73,7 +73,7 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-        self.conversations = load_conversations()   # Load movie lines
+        self.conversations = load_conversations()
         self.memory = []
         self.mood_history = []
         self.last_slot = None
@@ -136,28 +136,26 @@ class DeltaAgent:
     ]
 
     def generate_response(self, user_input, slot):
-        base = random.choice(self.REPLIES[slot])  # Default fallback
+        base = random.choice(self.REPLIES[slot])
 
-        # <<< TIGHTER CONTEXT: 80% chance, needs ≥2 shared words >>>
+        # <<< 3+ WORD MATCH REQUIRED >>>
         if self.conversations and random.random() < 0.8:
             user_words = set(user_input.lower().split())
-            if len(user_words) < 2:
-                return base + f" [slot {slot}]"  # too short to match
+            if len(user_words) < 3:
+                return base + f" [slot {slot}]"
 
             candidates = []
             for conv in self.conversations:
                 conv_words = set(conv["user"].lower().split())
                 overlap = len(user_words.intersection(conv_words))
-                if overlap >= 2:  # <<< Requires at least 2 matching words
+                if overlap >= 3:  # <<< Requires 3+ matching words
                     candidates.append((conv["bot"], overlap))
             
             if candidates:
-                # Pick the one with MOST shared words
                 candidates.sort(key=lambda x: x[1], reverse=True)
-                best_reply = candidates[0][0]
-                base = best_reply
+                base = candidates[0][0]
 
-        # Add fun fact (20% chance)
+        # Add fun fact
         if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
@@ -204,7 +202,7 @@ class DeltaAgent:
         self.save_state()
 
 # ==============================================================
-# 3. Streamlit UI
+# 3. Streamlit UI – CHAT GROWS DOWNWARD, INPUT AT BOTTOM
 # ==============================================================
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 st.title("Δ-Zero Chat – Adaptive AI")
@@ -222,7 +220,6 @@ if st.sidebar.button("Record Mood"):
     agent.update_mood(mood)
     st.sidebar.success("Saved!")
 
-# Safe Mood Chart
 if agent.mood_history:
     df = pd.DataFrame(agent.mood_history)
     if not df.empty and "timestamp" in df.columns and "mood" in df.columns:
@@ -236,30 +233,27 @@ else:
 st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Loaded {len(agent.knowledge)} facts")
-# REMOVED: "Loaded movie lines" from public sidebar
 
-# ---------- Slot Confidence (small) ----------
+# ---------- Slot Confidence ----------
 weights = agent.w / agent.w.sum()
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
 conf_fig = px.bar(
-    conf_df,
-    x="Style",
-    y="Confidence",
-    title="AI Personality Confidence",
-    color="Confidence",
-    color_continuous_scale="Blues",
-    height=250
+    conf_df, x="Style", y="Confidence", title="AI Personality Confidence",
+    color="Confidence", color_continuous_scale="Blues", height=250
 )
 st.plotly_chart(conf_fig, use_container_width=True)
 
-# ---------- Chat History ----------
+# ---------- Chat History (Grows DOWNWARD) ----------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
     st.session_state.last_bot_idx = -1
 
-def display_chat():
+# Container for chat (scrollable)
+chat_container = st.container()
+
+with chat_container:
     for i, msg in enumerate(st.session_state.chat_history):
         if msg["sender"] == "user":
             st.markdown(
@@ -284,45 +278,43 @@ def display_chat():
                                               reward=0.0, feedback="bad")
                         st.error("Learning: avoiding this style")
 
-# --------------------------------------------------------------
-#  INPUT + SEND BUTTON BELOW
-# --------------------------------------------------------------
-if "msg_to_send" not in st.session_state:
-    st.session_state.msg_to_send = ""
+# ---------- INPUT + SEND BUTTON BELOW (Fixed at bottom) ----------
+input_container = st.container()
 
-def submit_on_enter():
-    if st.session_state.msg_to_send.strip():
-        st.session_state.pending_message = st.session_state.msg_to_send
+with input_container:
+    if "msg_to_send" not in st.session_state:
         st.session_state.msg_to_send = ""
 
-user_input = st.text_input(
-    "Type your message…",
-    placeholder="Ask Δ-Zero anything…",
-    key="msg_to_send",
-    on_change=submit_on_enter
-)
+    def submit_on_enter():
+        if st.session_state.msg_to_send.strip():
+            st.session_state.pending_message = st.session_state.msg_to_send
+            st.session_state.msg_to_send = ""
 
-send_clicked = st.button("Send", type="primary")
+    user_input = st.text_input(
+        "Type your message…",
+        placeholder="Ask Δ-Zero anything…",
+        key="msg_to_send",
+        on_change=submit_on_enter
+    )
 
-if send_clicked or getattr(st.session_state, "pending_message", None):
-    msg = (st.session_state.pending_message
-           if "pending_message" in st.session_state else user_input)
+    send_clicked = st.button("Send", type="primary")
 
-    if msg.strip():
-        response, slot = agent.respond(msg)
-        agent.log_interaction("user", msg, response, slot)
-        agent.save_state()
+    if send_clicked or getattr(st.session_state, "pending_message", None):
+        msg = (st.session_state.pending_message
+               if "pending_message" in st.session_state else user_input)
 
-        st.session_state.chat_history.append({"sender": "user", "message": msg})
-        st.session_state.chat_history.append({"sender": "bot",  "message": response})
-        st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
+        if msg.strip():
+            response, slot = agent.respond(msg)
+            agent.log_interaction("user", msg, response, slot)
+            agent.save_state()
 
-        if "pending_message" in st.session_state:
-            del st.session_state.pending_message
-        st.rerun()
+            st.session_state.chat_history.append({"sender": "user", "message": msg})
+            st.session_state.chat_history.append({"sender": "bot",  "message": response})
+            st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
 
-# Always show chat
-display_chat()
+            if "pending_message" in st.session_state:
+                del st.session_state.pending_message
+            st.rerun()
 
 # --------------------------------------------------------------
 #  Reuse past messages
