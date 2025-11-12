@@ -33,18 +33,22 @@ def load_knowledge():
 def load_conversations():
     convs = []
     conv_dir = os.path.join(os.path.dirname(__file__), "conversations")
-    if os.path.exists(conv_dir):
-        for filename in os.listdir(conv_dir):
-            if filename.endswith(".txt"):
-                path = os.path.join(conv_dir, filename)
+    if not os.path.exists(conv_dir):
+        return convs
+    for filename in os.listdir(conv_dir):
+        if filename.endswith(".txt"):
+            path = os.path.join(conv_dir, filename)
+            try:
                 with open(path, "r", encoding="utf-8") as f:
                     lines = [line.strip() for line in f if line.strip()]
-                    # Pair lines: odd = user, even = bot (simple for most movie scripts)
+                    # Pair consecutive lines: user → bot
                     for i in range(0, len(lines) - 1, 2):
-                        user_msg = lines[i].strip()
-                        bot_msg = lines[i + 1].strip()
+                        user_msg = lines[i]
+                        bot_msg = lines[i + 1]
                         if user_msg and bot_msg:
                             convs.append({"user": user_msg, "bot": bot_msg})
+            except Exception as e:
+                st.error(f"Could not read {filename}: {e}")
     return convs
 
 # ==============================================================
@@ -67,7 +71,7 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-        self.conversations = load_conversations()   # <<< NEW: Load movie chats
+        self.conversations = load_conversations()   # <<< NEW: Load movie lines
         self.memory = []
         self.mood_history = []
         self.last_slot = None
@@ -132,8 +136,8 @@ class DeltaAgent:
     def generate_response(self, user_input, slot):
         base = random.choice(self.REPLIES[slot])  # Default personality
 
-        # <<< NEW: Try to use a real movie reply (40% chance) >>>
-        if self.conversations and random.random() < 0.4:
+        # <<< NEW: 80% chance to use a real movie line if words match >>>
+        if self.conversations and random.random() < 0.8:
             user_words = set(user_input.lower().split())
             candidates = []
             for conv in self.conversations:
@@ -227,7 +231,7 @@ if agent.knowledge:
 if agent.conversations:
     st.sidebar.success(f"Loaded {len(agent.conversations)} movie lines")
 else:
-    st.sidebar.info("Add .txt files to /conversations/ for movie-style replies")
+    st.sidebar.warning("No movie lines loaded – check /conversations/ folder")
 
 # ---------- Slot Confidence (small) ----------
 weights = agent.w / agent.w.sum()
@@ -276,7 +280,7 @@ def display_chat():
                         st.error("Learning: avoiding this style")
 
 # --------------------------------------------------------------
-#  INPUT + SEND (Enter key works)
+#  INPUT + SEND BUTTON BELOW (Enter key + button)
 # --------------------------------------------------------------
 if "msg_to_send" not in st.session_state:
     st.session_state.msg_to_send = ""
@@ -286,6 +290,7 @@ def submit_on_enter():
         st.session_state.pending_message = st.session_state.msg_to_send
         st.session_state.msg_to_send = ""
 
+# Text input
 user_input = st.text_input(
     "Type your message…",
     placeholder="Ask Δ-Zero anything…",
@@ -293,9 +298,8 @@ user_input = st.text_input(
     on_change=submit_on_enter
 )
 
-col1, col2 = st.columns([5, 1])
-with col2:
-    send_clicked = st.button("Send")
+# Send button BELOW the input
+send_clicked = st.button("Send", type="primary")
 
 if send_clicked or getattr(st.session_state, "pending_message", None):
     msg = (st.session_state.pending_message
