@@ -1,7 +1,7 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Clean Adaptive AI Chat Interface
-# by JCB (streamlined by ChatGPT)
+# Δ-Zero Chat – Adaptive AI with Short-Term Context
+# by JCB (enhanced by ChatGPT)
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -19,6 +19,7 @@ import plotly.express as px
 # 1. Load knowledge
 # ============================================================== #
 def load_knowledge():
+    """Loads .txt files from /knowledge folder"""
     knowledge = []
     knowledge_dir = os.path.join(os.path.dirname(__file__), "knowledge")
     if os.path.exists(knowledge_dir):
@@ -30,7 +31,7 @@ def load_knowledge():
 
 
 # ============================================================== #
-# 2. DeltaAgent – Adaptive Chat Logic
+# 2. DeltaAgent – Adaptive Chat Logic with Short-Term Memory
 # ============================================================== #
 class DeltaAgent:
     def __init__(
@@ -40,6 +41,7 @@ class DeltaAgent:
         brain_file="global_brain.pkl",
         data_file="chat_log.enc",
         key_file="secret.key",
+        short_term_len=5,
     ):
         self.n_slots = n_slots
         self.lr = lr
@@ -47,7 +49,8 @@ class DeltaAgent:
         self.data_file = data_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-        self.memory = []
+        self.memory = []  # Long-term memory
+        self.short_term_len = short_term_len  # how many past messages to recall
         self.last_slot = None
 
         # Encryption setup
@@ -66,7 +69,7 @@ class DeltaAgent:
         else:
             self.w = np.ones(n_slots) / n_slots
 
-        # Load chat history
+        # Load chat history (long-term)
         if os.path.exists(data_file):
             try:
                 with open(data_file, "rb") as f:
@@ -99,11 +102,27 @@ class DeltaAgent:
         ["Let's analyze this.", "Interesting angle.", "Break it down."]
     ]
 
+    def get_short_term_context(self):
+        """Get the last N user messages for short-term awareness"""
+        recent = [e["input"] for e in self.memory[-self.short_term_len:] if e["input"]]
+        if recent:
+            return " | ".join(recent[-self.short_term_len:])
+        return ""
+
     def generate_response(self, user_input, slot):
+        """Generate a response influenced by style, context, and knowledge"""
         base = random.choice(self.REPLIES[slot])
+
+        # Blend short-term context for more coherent replies
+        context = self.get_short_term_context()
+        if context and random.random() < 0.4:
+            base += f" Considering what we discussed earlier ({context.split('|')[-1].strip()}), I'd say that's interesting."
+
+        # Occasionally pull a random fact
         if self.knowledge and random.random() < 0.25:
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
+
         return base + f" [slot {slot}]"
 
     def respond(self, user_input):
@@ -112,6 +131,7 @@ class DeltaAgent:
         return response, slot
 
     def update(self, reward):
+        """Reinforce or weaken specific style slots"""
         if self.last_slot is not None:
             self.w[self.last_slot] += self.lr * (reward - self.w[self.last_slot])
             self.w = np.clip(self.w, 0.01, None)
@@ -141,12 +161,12 @@ class DeltaAgent:
 
 
 # ============================================================== #
-# 3. Streamlit Interface (Cleaned)
+# 3. Streamlit Interface (Cleaned + Short-Term Aware)
 # ============================================================== #
 
 st.set_page_config(page_title="Δ-Zero Chat", layout="centered")
 st.title("Δ-Zero Chat 🧠")
-st.caption("Adaptive AI with learning feedback")
+st.caption("Adaptive AI with short-term awareness & learning feedback")
 
 agent = DeltaAgent()
 
