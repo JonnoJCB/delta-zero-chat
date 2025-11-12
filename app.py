@@ -12,7 +12,7 @@ import random
 from datetime import datetime
 from cryptography.fernet import Fernet
 import plotly.express as px
-from sentence_transformers import SentenceTransformer, util  # Semantic search
+from sentence_transformers import SentenceTransformer, util
 
 # ==============================================================
 # 1. Load knowledge from /knowledge/*.txt
@@ -65,7 +65,7 @@ class DeltaAgent:
         data_file="chat_log.enc",
         mood_file="mood_history.pkl",
         key_file="secret.key",
-        context_size=5,  # Remember last 5 turns
+        context_size=5,
     ):
         self.n_slots = n_slots
         self.lr = lr
@@ -80,8 +80,8 @@ class DeltaAgent:
         self.mood_history = []
         self.last_slot = None
         self.dynamic_convos = []
-        self.context = []  # Short-term: last N turns
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')  # Semantic embeddings
+        self.context = []
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
 
         # Encryption
         if not os.path.exists(key_file):
@@ -126,7 +126,6 @@ class DeltaAgent:
         else:
             self.mood_history = []
 
-        # Build dynamic convos
         self._update_dynamic_convos()
 
     def _update_dynamic_convos(self):
@@ -138,11 +137,10 @@ class DeltaAgent:
                 self.dynamic_convos.append({"user": user_msg, "bot": bot_msg})
 
     def _apply_mood_boost(self, mood):
-        """Boost slots based on mood"""
         boosted_w = self.w.copy()
-        if mood <= 3:  # Low: Empathetic (slot 3)
+        if mood <= 3:
             boosted_w[3] *= 1.4
-        elif mood >= 7:  # High: Engaging (2) + Curious (0)
+        elif mood >= 7:
             boosted_w[2] *= 1.4
             boosted_w[0] *= 1.4
         boosted_w /= boosted_w.sum()
@@ -165,27 +163,22 @@ class DeltaAgent:
     ]
 
     def generate_response(self, user_input, slot, current_mood=None):
-        # Build full context (last 5 turns + all convos)
-        context_msgs = [turn["input"] + " " + turn["response"] for turn in self.context[-self.context_size*2:]]  # Last 5 user+bot
+        context_msgs = [turn["input"] + " " + turn["response"] for turn in self.context[-self.context_size*2:]]
         all_convos = self.conversations + self.dynamic_convos
         all_texts = [c["user"] for c in all_convos] + context_msgs
 
-        # Semantic search
         if all_texts:
             query_emb = self.model.encode(user_input)
             text_embs = self.model.encode(all_texts)
             scores = util.cos_sim(query_emb, text_embs)[0]
             best_idx = scores.argmax().item()
-            if scores[best_idx] > 0.5:  # Semantic threshold
+            if scores[best_idx] > 0.5:
                 if best_idx < len(all_convos):
                     reply = all_convos[best_idx]["bot"]
                 else:
-                    # From context (reuse recent)
-                    reply = all_convos[0]["bot"]  # Fallback to first
+                    reply = all_convos[0]["bot"]
                 return reply + f" [slot {slot}]"
 
-        # Fallback: Exact 3+ word match (backup)
-        all_convos = self.conversations + self.dynamic_convos
         user_words = set(user_input.lower().split())
         if len(user_words) >= 3:
             candidates = []
@@ -198,7 +191,6 @@ class DeltaAgent:
                 candidates.sort(key=lambda x: x[1], reverse=True)
                 return candidates[0][0] + f" [slot {slot}]"
 
-        # Final fallback: Personality
         base = random.choice(self.REPLIES[slot])
         if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
@@ -208,7 +200,6 @@ class DeltaAgent:
     def respond(self, user_input, mood=None):
         slot = self.choose_slot(mood)
         response = self.generate_response(user_input, slot, mood)
-        # Update context
         self.context.append({"input": user_input, "response": response})
         if len(self.context) > self.context_size * 2:
             self.context = self.context[-self.context_size * 2:]
@@ -249,17 +240,18 @@ class DeltaAgent:
         self.mood_history.append({"timestamp": ts, "mood": mood_value})
         self.save_state()
 
+
 # ==============================================================
 # 3. Streamlit UI – Upgraded
 # ==============================================================
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 st.title("Δ-Zero Chat – Adaptive AI")
-st.markdown(
-    "<sub>by JCB – your personalized AI companion by JCB</sub>",
-    unsafe_allow_html=True
-)
+st.markdown("<sub>by JCB – your personalized AI companion by JCB</sub>", unsafe_allow_html=True)
 
-agent = DeltaAgent()
+# Initialize agent once
+if "agent" not in st.session_state:
+    st.session_state.agent = DeltaAgent()
+agent = st.session_state.agent
 
 # ---------- Sidebar ----------
 st.sidebar.header("Mood Tracker")
@@ -311,6 +303,8 @@ def render_chat():
                 st.markdown(
                     f"<div style='background:#F8D7DA;padding:10px;border-radius:8px;margin:5px 0'>"
                     f"<b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
+                
+                # Only show feedback on the LAST bot message
                 if i == st.session_state.last_bot_idx:
                     col1, col2 = st.columns([1, 1])
                     with col1:
@@ -319,59 +313,55 @@ def render_chat():
                             agent.log_interaction("user", "", "", agent.last_slot,
                                                   reward=1.0, feedback="good")
                             st.success("Learning: favoring this style")
+                            st.rerun()
                     with col2:
                         if st.button("Bad", key=f"bad_{i}"):
                             agent.update(0.0)
                             agent.log_interaction("user", "", "", agent.last_slot,
                                                   reward=0.0, feedback="bad")
                             st.error("Learning: avoiding this style")
+                            st.rerun()
 
-# ---------- INPUT + SEND (Mood-Aware) ----------
-input_col = st.container()
+render_chat()
 
-with input_col:
-    if "msg_to_send" not in st.session_state:
+# ---------- INPUT + SEND ----------
+if "msg_to_send" not in st.session_state:
+    st.session_state.msg_to_send = ""
+
+def submit_on_enter():
+    if st.session_state.msg_to_send.strip():
+        st.session_state.pending_message = st.session_state.msg_to_send
         st.session_state.msg_to_send = ""
 
-    def submit_on_enter():
-        if st.session_state.msg_to_send.strip():
-            st.session_state.pending_message = st.session_state.msg_to_send
-            st.session_state.msg_to_send = ""
+user_input = st.text_input(
+    "Type your message…",
+    placeholder="Ask Δ-Zero anything…",
+    key="msg_to_send",
+    on_change=submit_on_enter
+)
+send_clicked = st.button("Send", type="primary")
 
-    user_input = st.text_input(
-        "Type your message…",
-        placeholder="Ask Δ-Zero anything…",
-        key="msg_to_send",
-        on_change=submit_on_enter
-    )
+if send_clicked or getattr(st.session_state, "pending_message", None):
+    msg = (st.session_state.pending_message
+           if "pending_message" in st.session_state else user_input)
+    if msg.strip():
+        response, slot = agent.respond(msg, mood)
+        agent.log_interaction("user", msg, response, slot)
+        agent.save_state()
 
-    send_clicked = st.button("Send", type="primary")
+        st.session_state.chat_history.append({"sender": "user", "message": msg})
+        st.session_state.chat_history.append({"sender": "bot", "message": response})
+        st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
 
-    if send_clicked or getattr(st.session_state, "pending_message", None):
-        msg = (st.session_state.pending_message
-               if "pending_message" in st.session_state else user_input)
-
-        if msg.strip():
-            response, slot = agent.respond(msg, mood)  # Mood tunes slot
-            agent.log_interaction("user", msg, response, slot)
-            agent.save_state()
-
-            st.session_state.chat_history.append({"sender": "user", "message": msg})
-            st.session_state.chat_history.append({"sender": "bot", "message": response})
-            st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
-
-            if "pending_message" in st.session_state:
-                del st.session_state.pending_message
-            st.rerun()
-
-# Render chat
-render_chat()
+        if "pending_message" in st.session_state:
+            del st.session_state.pending_message
+        st.rerun()
 
 # --------------------------------------------------------------
 # Reuse past messages
 # --------------------------------------------------------------
 if st.checkbox("Reuse past messages"):
-    past = [e["input"] for e in agent.memory[-20:] if e["input"]]
+    past = [e["input"] for e in agent.memory[-20:] if e.get("input")]
     sel = st.selectbox("Pick one", [""] + past)
     if sel:
         st.session_state.msg_to_send = sel
@@ -381,7 +371,7 @@ if st.checkbox("Reuse past messages"):
 # Learning summary
 # --------------------------------------------------------------
 if st.button("Show Feedback Summary"):
-    fb = [e for e in agent.memory if e["feedback"]]
+    fb = [e for e in agent.memory if e.get("feedback")]
     if fb:
         df = pd.DataFrame(fb)["feedback"].value_counts().reset_index()
         df.columns = ["Feedback", "Count"]
