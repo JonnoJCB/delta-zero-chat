@@ -156,6 +156,7 @@ class DeltaAgent:
 
 APP_PATH = os.path.dirname(os.path.abspath(__file__))
 MSN_SOUND_PATH = os.path.join(APP_PATH, "msn_ping.mp3")
+MSN_FALLBACK_URL = "https://www.myinstants.com/media/sounds/msn-alert-new-mensage.mp3"
 
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 
@@ -213,13 +214,14 @@ if user_input:
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
     st.session_state.chat_history.append({"sender": "bot", "message": response})
 
-    # Play MSN-style ping sound
+    # Play MSN-style ping sound (local first, fallback to online)
     try:
         with open(MSN_SOUND_PATH, "rb") as f:
             audio_bytes = f.read()
         st.audio(audio_bytes, format="audio/mp3")
     except FileNotFoundError:
-        st.warning(f"⚠️ MSN ping sound not found! Place 'msn_ping.mp3' in the same folder as app.py")
+        st.warning(f"⚠️ Local MSN ping not found. Playing online fallback.")
+        st.audio(MSN_FALLBACK_URL, format="audio/mp3")
 
     # Clear input
     st.session_state.user_input = ""
