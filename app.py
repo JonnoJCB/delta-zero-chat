@@ -28,11 +28,131 @@ def load_knowledge():
     return knowledge
 
 # ==============================================================
-# 2. DeltaAgent – (unchanged – copy from your last working version)
+# 2. DeltaAgent – Adaptive with per-slot replies
 # ==============================================================
 class DeltaAgent:
-    # ... (the whole class you already have) ...
-    pass
+    def __init__(
+        self,
+        n_slots=5,
+        lr=0.07,
+        brain_file="global_brain.pkl",
+        data_file="chat_log.enc",
+        mood_file="mood_history.pkl",
+        key_file="secret.key",
+    ):
+        self.n_slots = n_slots
+        self.lr = lr
+        self.brain_file = brain_file
+        self.data_file = data_file
+        self.mood_file = mood_file
+        self.key_file = key_file
+        self.knowledge = load_knowledge()
+        self.memory = []
+        self.mood_history = []
+        self.last_slot = None
+
+        # ---------- Encryption ----------
+        if not os.path.exists(key_file):
+            key = Fernet.generate_key()
+            with open(key_file, "wb") as f:
+                f.write(key)
+        with open(key_file, "rb") as f:
+            self.cipher = Fernet(f.read())
+
+        # ---------- Load brain ----------
+        if os.path.exists(brain_file):
+            with open(brain_file, "rb") as f:
+                saved = pickle.load(f)
+                self.w = saved.get("w", np.ones(n_slots) / n_slots)
+        else:
+            self.w = np.ones(n_slots) / n_slots
+
+        # ---------- Load encrypted chat log ----------
+        if os.path.exists(data_file):
+            try:
+                with open(data_file, "rb") as f:
+                    encrypted = f.read()
+                    if encrypted:
+                        decrypted = self.cipher.decrypt(encrypted)
+                        df = pd.read_csv(pd.io.common.StringIO(decrypted.decode()))
+                        self.memory = df.to_dict("records")
+                    else:
+                        self.memory = []
+            except Exception:
+                st.warning("Could not decrypt chat log. Starting fresh.")
+                self.memory = []
+        else:
+            self._save_encrypted_df(pd.DataFrame(columns=[
+                "timestamp","user","input","response","slot",
+                "reward","feedback","fb_text"
+            ]))
+
+        # ---------- Load mood history ----------
+        if os.path.exists(mood_file):
+            with open(mood_file, "rb") as f:
+                self.mood_history = pickle.load(f)
+        else:
+            self.mood_history = []
+
+    def choose_slot(self):
+        probs = self.w / self.w.sum()
+        slot = np.random.choice(range(self.n_slots), p=probs)
+        self.last_slot = slot
+        return slot
+
+    REPLIES = [
+        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],          # 0: Curious
+        ["I understand.", "That makes sense.", "Clear as day."],          # 1: Calm
+        ["Tell me more!", "Keep going!", "Don't stop now!"],              # 2: Engaging
+        ["How do you feel about that?", "Why do you think so?", "That's deep."],  # 3: Empathetic
+        ["Let's analyze this.", "Interesting angle.", "Break it down."]   # 4: Analytical
+    ]
+
+    def generate_response(self, user_input, slot):
+        base = random.choice(self.REPLIES[slot])
+        if self.knowledge and random.random() < 0.2:   # 20% fun fact
+            fact = random.choice(self.knowledge)
+            base += f" Fun fact: {fact}"
+        return base + f" [slot {slot}]"
+
+    def respond(self, user_input):
+        slot = self.choose_slot()
+        response = self.generate_response(user_input, slot)
+        return response, slot
+
+    def update(self, reward):
+        if self.last_slot is not None:
+            self.w[self.last_slot] += self.lr * (reward - self.w[self.last_slot])
+            self.w = np.clip(self.w, 0.01, None)
+            self.w /= self.w.sum()
+
+    def log_interaction(self, user, user_input, response, slot,
+                        reward=None, feedback=None, fb_text=None):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = {
+            "timestamp": ts, "user": user, "input": user_input,
+            "response": response, "slot": slot,
+            "reward": reward, "feedback": feedback, "fb_text": fb_text
+        }
+        self.memory.append(entry)
+        self._save_encrypted_df(pd.DataFrame(self.memory))
+
+    def _save_encrypted_df(self, df):
+        csv = df.to_csv(index=False)
+        encrypted = self.cipher.encrypt(csv.encode())
+        with open(self.data_file, "wb") as f:
+            f.write(encrypted)
+
+    def save_state(self):
+        with open(self.brain_file, "wb") as f:
+            pickle.dump({"w": self.w}, f)
+        with open(self.mood_file, "wb") as f:
+            pickle.dump(self.mood_history, f)
+
+    def update_mood(self, mood_value):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.mood_history.append({"timestamp": ts, "mood": mood_value})
+        self.save_state()
 
 # ==============================================================
 # 3. Streamlit UI
@@ -46,17 +166,23 @@ st.markdown(
 
 agent = DeltaAgent()
 
-# ---------- Sidebar (unchanged) ----------
+# ---------- Sidebar ----------
 st.sidebar.header("Mood Tracker")
 mood = st.sidebar.slider("Your mood (optional)", 0.0, 10.0, 5.0, 0.5)
 if st.sidebar.button("Record Mood"):
     agent.update_mood(mood)
     st.sidebar.success("Saved!")
 
+# ---- Safe Mood Chart (no crash on empty) ----
 if agent.mood_history:
     df = pd.DataFrame(agent.mood_history)
-    fig = px.line(df, x="timestamp", y="mood", title="Mood Over Time", markers=True)
-    st.sidebar.plotly_chart(fig, use_container_width=True)
+    if not df.empty and "timestamp" in df.columns and "mood" in df.columns:
+        fig = px.line(df, x="timestamp", y="mood", title="Mood Over Time", markers=True)
+        st.sidebar.plotly_chart(fig, use_container_width=True)
+    else:
+        st.sidebar.info("No mood data yet.")
+else:
+    st.sidebar.info("No mood data yet.")
 
 st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
@@ -77,7 +203,7 @@ conf_fig = px.bar(
 )
 st.plotly_chart(conf_fig, use_container_width=True)
 
-# ---------- Chat history ----------
+# ---------- Chat History ----------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
@@ -109,7 +235,7 @@ def display_chat():
                         st.error("Learning: avoiding this style")
 
 # --------------------------------------------------------------
-#  INPUT + SEND (works with ENTER on ALL Streamlit versions)
+#  INPUT + SEND (Enter key works on ALL Streamlit versions)
 # --------------------------------------------------------------
 if "msg_to_send" not in st.session_state:
     st.session_state.msg_to_send = ""
@@ -147,7 +273,7 @@ if send_clicked or getattr(st.session_state, "pending_message", None):
             del st.session_state.pending_message
         st.rerun()
 
-# Always show the chat
+# Always show chat
 display_chat()
 
 # --------------------------------------------------------------
