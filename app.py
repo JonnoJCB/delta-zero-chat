@@ -53,7 +53,7 @@ def load_conversations():
     return convs
 
 # ==============================================================
-# 2. DeltaAgent – 3+ word match for movie replies
+# 2. DeltaAgent – Learns from YOU + movie.txt
 # ==============================================================
 class DeltaAgent:
     def __init__(
@@ -72,8 +72,8 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-        self.conversations = load_conversations()
-        self.memory = []
+        self.conversations = load_conversations()   # From movie.txt
+        self.memory = []  # All chats (encrypted)
         self.mood_history = []
         self.last_slot = None
 
@@ -93,7 +93,7 @@ class DeltaAgent:
         else:
             self.w = np.ones(n_slots) / n_slots
 
-        # Load chat log
+        # Load encrypted chat log
         if os.path.exists(data_file):
             try:
                 with open(data_file, "rb") as f:
@@ -120,6 +120,19 @@ class DeltaAgent:
         else:
             self.mood_history = []
 
+        # NEW: Build dynamic conversation pool from memory
+        self.dynamic_convos = []
+        self._update_dynamic_convos()
+
+    def _update_dynamic_convos(self):
+        """Rebuild conversation pool from memory (user → bot pairs)"""
+        self.dynamic_convos = []
+        for i in range(0, len(self.memory) - 1, 2):
+            user_msg = self.memory[i].get("input", "")
+            bot_msg = self.memory[i + 1].get("response", "")
+            if user_msg and bot_msg:
+                self.dynamic_convos.append({"user": user_msg, "bot": bot_msg})
+
     def choose_slot(self):
         probs = self.w / self.w.sum()
         slot = np.random.choice(range(self.n_slots), p=probs)
@@ -135,29 +148,27 @@ class DeltaAgent:
     ]
 
     def generate_response(self, user_input, slot):
-        base = random.choice(self.REPLIES[slot])
+        # PRIORITIZE: First movie.txt, then your own chats
+        all_convos = self.conversations + self.dynamic_convos
 
-        # 3+ WORD MATCH
-        if self.conversations and random.random() < 0.8:
+        if all_convos:
             user_words = set(user_input.lower().split())
-            if len(user_words) < 3:
-                return base + f" [slot {slot}]"
+            if len(user_words) >= 3:
+                candidates = []
+                for conv in all_convos:
+                    conv_words = set(conv["user"].lower().split())
+                    overlap = len(user_words.intersection(conv_words))
+                    if overlap >= 3:
+                        candidates.append((conv["bot"], overlap))
+                if candidates:
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                    return candidates[0][0] + f" [slot {slot}]"
 
-            candidates = []
-            for conv in self.conversations:
-                conv_words = set(conv["user"].lower().split())
-                overlap = len(user_words.intersection(conv_words))
-                if overlap >= 3:
-                    candidates.append((conv["bot"], overlap))
-            
-            if candidates:
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                base = candidates[0][0]
-
+        # FALLBACK: Personality reply
+        base = random.choice(self.REPLIES[slot])
         if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
-
         return base + f" [slot {slot}]"
 
     def respond(self, user_input):
@@ -181,6 +192,7 @@ class DeltaAgent:
         }
         self.memory.append(entry)
         self._save_encrypted_df(pd.DataFrame(self.memory))
+        self._update_dynamic_convos()  # Rebuild pool after every message
 
     def _save_encrypted_df(self, df):
         csv = df.to_csv(index=False)
@@ -200,7 +212,7 @@ class DeltaAgent:
         self.save_state()
 
 # ==============================================================
-# 3. Streamlit UI – FIXED CHAT + INPUT AT BOTTOM
+# 3. Streamlit UI – Chat Grows Down, Input at Bottom
 # ==============================================================
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 st.title("Δ-Zero Chat – Adaptive AI")
@@ -242,7 +254,7 @@ conf_fig = px.bar(
 )
 st.plotly_chart(conf_fig, use_container_width=True)
 
-# ---------- Chat History (Single Container) ----------
+# ---------- Chat History ----------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
@@ -312,8 +324,6 @@ with input_col:
 
             if "pending_message" in st.session_state:
                 del st.session_state.pending_message
-
-            # Force full re-render
             st.rerun()
 
 # Render chat after input
