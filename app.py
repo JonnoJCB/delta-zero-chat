@@ -1,6 +1,6 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Smart AI with MOOD CHART, Learning & Encrypted Memory
+# Δ-Zero Chat – Smart AI with MOOD CHART, Learning & Encrypted Memory by JCB
 # Enhanced with conversation UI, colors, and MSN sound
 # by JCB
 # --------------------------------------------------------------
@@ -13,6 +13,7 @@ import pandas as pd
 import random
 from datetime import datetime
 from cryptography.fernet import Fernet
+import plotly.express as px
 
 # --------------------------------------------------------------
 # 1. DeltaAgent – Smart + Mood Tracking + Encrypted Learning
@@ -167,7 +168,6 @@ if st.sidebar.button("Record Mood"):
 # Mood Chart
 if agent.mood_history:
     mood_df = pd.DataFrame(agent.mood_history)
-    import plotly.express as px
     fig = px.line(mood_df, x="timestamp", y="mood", title="Mood Over Time", markers=True)
     st.sidebar.plotly_chart(fig, use_container_width=True)
 
@@ -196,8 +196,13 @@ if user_input:
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
     st.session_state.chat_history.append({"sender": "bot", "message": response})
 
-    # Play MSN-style ping sound
-    st.audio("msn_ping.mp3", format="audio/mp3", start_time=0)
+    # Play MSN-style ping sound (local file)
+    try:
+        with open("msn_ping.mp3", "rb") as f:
+            audio_bytes = f.read()
+        st.audio(audio_bytes, format="audio/mp3")
+    except FileNotFoundError:
+        st.warning("⚠️ MSN ping sound not found! Place 'msn_ping.mp3' in the app folder.")
 
     # Clear input
     st.session_state.user_input = ""
@@ -214,4 +219,3 @@ if st.checkbox("Use previous messages"):
 
 # Show total encrypted chat count
 st.sidebar.info(f"Total encrypted chats stored: {len(agent.memory)}")
-
