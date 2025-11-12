@@ -3,16 +3,17 @@ numpy
 pandas
 plotly
 cryptography
-sentence-transformers
-torch==2.0.1+cpu
-torchvision==0.15.2+cpu
-transformers>=4.30.0
+sentence-transformers>=2.2.2
+torch==2.0.1
+torchvision==0.15.2
+transformers==4.21.0
 tqdm
 scikit-learn
 scipy
 nltk
 sentencepiece
 huggingface-hub
+
 
 
 
