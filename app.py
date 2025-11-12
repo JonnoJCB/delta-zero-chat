@@ -28,7 +28,27 @@ def load_knowledge():
     return knowledge
 
 # ==============================================================
-# 2. DeltaAgent – Adaptive with per-slot replies
+# 1b. Load conversations from /conversations/*.txt
+# ==============================================================
+def load_conversations():
+    convs = []
+    conv_dir = os.path.join(os.path.dirname(__file__), "conversations")
+    if os.path.exists(conv_dir):
+        for filename in os.listdir(conv_dir):
+            if filename.endswith(".txt"):
+                path = os.path.join(conv_dir, filename)
+                with open(path, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip()]
+                    # Pair lines: odd = user, even = bot (simple for most movie scripts)
+                    for i in range(0, len(lines) - 1, 2):
+                        user_msg = lines[i].strip()
+                        bot_msg = lines[i + 1].strip()
+                        if user_msg and bot_msg:
+                            convs.append({"user": user_msg, "bot": bot_msg})
+    return convs
+
+# ==============================================================
+# 2. DeltaAgent – Adaptive with per-slot replies + movie context
 # ==============================================================
 class DeltaAgent:
     def __init__(
@@ -47,6 +67,7 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
+        self.conversations = load_conversations()   # <<< NEW: Load movie chats
         self.memory = []
         self.mood_history = []
         self.last_slot = None
@@ -109,10 +130,26 @@ class DeltaAgent:
     ]
 
     def generate_response(self, user_input, slot):
-        base = random.choice(self.REPLIES[slot])
-        if self.knowledge and random.random() < 0.2:   # 20% fun fact
+        base = random.choice(self.REPLIES[slot])  # Default personality
+
+        # <<< NEW: Try to use a real movie reply (40% chance) >>>
+        if self.conversations and random.random() < 0.4:
+            user_words = set(user_input.lower().split())
+            candidates = []
+            for conv in self.conversations:
+                conv_words = set(conv["user"].lower().split())
+                overlap = len(user_words.intersection(conv_words))
+                if overlap > 0:
+                    candidates.append((conv["bot"], overlap))
+            if candidates:
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                base = candidates[0][0]  # Best matching movie line
+
+        # Add fun fact (20% chance)
+        if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
+
         return base + f" [slot {slot}]"
 
     def respond(self, user_input):
@@ -173,7 +210,7 @@ if st.sidebar.button("Record Mood"):
     agent.update_mood(mood)
     st.sidebar.success("Saved!")
 
-# ---- Safe Mood Chart (no crash on empty) ----
+# Safe Mood Chart
 if agent.mood_history:
     df = pd.DataFrame(agent.mood_history)
     if not df.empty and "timestamp" in df.columns and "mood" in df.columns:
@@ -187,8 +224,12 @@ else:
 st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Loaded {len(agent.knowledge)} facts")
+if agent.conversations:
+    st.sidebar.success(f"Loaded {len(agent.conversations)} movie lines")
+else:
+    st.sidebar.info("Add .txt files to /conversations/ for movie-style replies")
 
-# ---------- Slot Confidence (small chart) ----------
+# ---------- Slot Confidence (small) ----------
 weights = agent.w / agent.w.sum()
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
@@ -235,7 +276,7 @@ def display_chat():
                         st.error("Learning: avoiding this style")
 
 # --------------------------------------------------------------
-#  INPUT + SEND (Enter key works on ALL Streamlit versions)
+#  INPUT + SEND (Enter key works)
 # --------------------------------------------------------------
 if "msg_to_send" not in st.session_state:
     st.session_state.msg_to_send = ""
