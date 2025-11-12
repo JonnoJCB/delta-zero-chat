@@ -1,9 +1,8 @@
 # app.py
 # --------------------------------------------------------------
 # Δ-Zero Chat – Adaptive AI with Feedback, Mood Chart & Knowledge
-# by JCB * – your personalized AI companion*
+# by JCB – your personalized AI companion by JCB
 # --------------------------------------------------------------
-
 import streamlit as st
 import numpy as np
 import os
@@ -14,9 +13,9 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 import plotly.express as px
 
-# ============================================================== 
+# ==============================================================
 # 1. Load knowledge from /knowledge/*.txt
-# ============================================================== 
+# ==============================================================
 def load_knowledge():
     knowledge = []
     knowledge_dir = os.path.join(os.path.dirname(__file__), "knowledge")
@@ -28,9 +27,9 @@ def load_knowledge():
                     knowledge.extend([line.strip() for line in f if line.strip()])
     return knowledge
 
-# ============================================================== 
+# ==============================================================
 # 2. DeltaAgent – Adaptive with per-slot replies
-# ============================================================== 
+# ==============================================================
 class DeltaAgent:
     def __init__(
         self,
@@ -48,7 +47,6 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-
         self.memory = []
         self.mood_history = []
         self.last_slot = None
@@ -103,16 +101,16 @@ class DeltaAgent:
         return slot
 
     REPLIES = [
-        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],                    # 0: Curious
-        ["I understand.", "That makes sense.", "Clear as day."],                   # 1: Calm
-        ["Tell me more!", "Keep going!", "Don't stop now!"],                       # 2: Engaging
-        ["How do you feel about that?", "Why do you think so?", "That's deep."],   # 3: Empathetic
-        ["Let's analyze this.", "Interesting angle.", "Break it down."]            # 4: Analytical
+        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],          # 0: Curious
+        ["I understand.", "That makes sense.", "Clear as day."],          # 1: Calm
+        ["Tell me more!", "Keep going!", "Don't stop now!"],              # 2: Engaging
+        ["How do you feel about that?", "Why do you think so?", "That's deep."],  # 3: Empathetic
+        ["Let's analyze this.", "Interesting angle.", "Break it down."]   # 4: Analytical
     ]
 
     def generate_response(self, user_input, slot):
         base = random.choice(self.REPLIES[slot])
-        if self.knowledge and random.random() < 0.2:  # 20% chance of fun fact
+        if self.knowledge and random.random() < 0.2:   # 20% chance of fun fact
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
         return base + f" [slot {slot}]"
@@ -156,14 +154,15 @@ class DeltaAgent:
         self.mood_history.append({"timestamp": ts, "mood": mood_value})
         self.save_state()
 
-# ============================================================== 
+# ==============================================================
 # 3. Streamlit UI
-# ============================================================== 
-
+# ==============================================================
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
-
 st.title("Δ-Zero Chat – Adaptive AI")
-st.markdown("<sub>by JCB *– your personalized AI companion*</sub>", unsafe_allow_html=True)
+st.markdown(
+    "<sub>by JCB – your personalized AI companion by JCB</sub>",
+    unsafe_allow_html=True
+)
 
 agent = DeltaAgent()
 
@@ -183,12 +182,20 @@ st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Loaded {len(agent.knowledge)} facts")
 
-# ---------- Slot Confidence ----------
+# ---------- Slot Confidence (smaller) ----------
 weights = agent.w / agent.w.sum()
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
-conf_fig = px.bar(conf_df, x="Style", y="Confidence", title="AI Personality Confidence",
-                  color="Confidence", color_continuous_scale="Blues")
+conf_fig = px.bar(
+    conf_df,
+    x="Style",
+    y="Confidence",
+    title="AI Personality Confidence",
+    color="Confidence",
+    color_continuous_scale="Blues",
+    height=250,
+    width=int(st.get_option("theme.baseWidth") * 0.8)  # 80% of container
+)
 st.plotly_chart(conf_fig, use_container_width=True)
 
 # ---------- Chat ----------
@@ -207,7 +214,6 @@ def display_chat():
             st.markdown(
                 f"<div style='background:#F8D7DA;padding:10px;border-radius:8px;margin:5px 0'>"
                 f"<b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
-
             if i == st.session_state.last_bot_idx:
                 col1, col2 = st.columns([1, 1])
                 with col1:
@@ -231,11 +237,9 @@ if user_input.strip():
     response, slot = agent.respond(user_input)
     agent.log_interaction("user", user_input, response, slot)
     agent.save_state()
-
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
     st.session_state.chat_history.append({"sender": "bot", "message": response})
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
-
     st.rerun()
 
 # Always show chat
