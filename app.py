@@ -53,7 +53,7 @@ def load_conversations():
     return convs
 
 # ==============================================================
-# 2. DeltaAgent – Learns from YOU + movie.txt
+# 2. DeltaAgent – Self-Learning + Movie Lines (NO RANDOM FALLBACK)
 # ==============================================================
 class DeltaAgent:
     def __init__(
@@ -72,10 +72,11 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-        self.conversations = load_conversations()   # From movie.txt
-        self.memory = []  # All chats (encrypted)
+        self.conversations = load_conversations()   # movie.txt
+        self.memory = []  # encrypted chat log
         self.mood_history = []
         self.last_slot = None
+        self.dynamic_convos = []  # your real chats
 
         # Encryption
         if not os.path.exists(key_file):
@@ -93,7 +94,7 @@ class DeltaAgent:
         else:
             self.w = np.ones(n_slots) / n_slots
 
-        # Load encrypted chat log
+        # Load chat log
         if os.path.exists(data_file):
             try:
                 with open(data_file, "rb") as f:
@@ -120,12 +121,11 @@ class DeltaAgent:
         else:
             self.mood_history = []
 
-        # NEW: Build dynamic conversation pool from memory
-        self.dynamic_convos = []
+        # Build dynamic convos from memory
         self._update_dynamic_convos()
 
     def _update_dynamic_convos(self):
-        """Rebuild conversation pool from memory (user → bot pairs)"""
+        """Rebuild your real conversation pairs from memory"""
         self.dynamic_convos = []
         for i in range(0, len(self.memory) - 1, 2):
             user_msg = self.memory[i].get("input", "")
@@ -148,9 +148,10 @@ class DeltaAgent:
     ]
 
     def generate_response(self, user_input, slot):
-        # PRIORITIZE: First movie.txt, then your own chats
+        # ALL SOURCES: movie.txt + your real chats
         all_convos = self.conversations + self.dynamic_convos
 
+        # MATCH: 3+ shared words → use it
         if all_convos:
             user_words = set(user_input.lower().split())
             if len(user_words) >= 3:
@@ -164,7 +165,7 @@ class DeltaAgent:
                     candidates.sort(key=lambda x: x[1], reverse=True)
                     return candidates[0][0] + f" [slot {slot}]"
 
-        # FALLBACK: Personality reply
+        # FALLBACK: Personality (only if no match)
         base = random.choice(self.REPLIES[slot])
         if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
@@ -192,7 +193,7 @@ class DeltaAgent:
         }
         self.memory.append(entry)
         self._save_encrypted_df(pd.DataFrame(self.memory))
-        self._update_dynamic_convos()  # Rebuild pool after every message
+        self._update_dynamic_convos()  # ← Self-learning happens here
 
     def _save_encrypted_df(self, df):
         csv = df.to_csv(index=False)
@@ -326,7 +327,7 @@ with input_col:
                 del st.session_state.pending_message
             st.rerun()
 
-# Render chat after input
+# Render chat
 render_chat()
 
 # --------------------------------------------------------------
