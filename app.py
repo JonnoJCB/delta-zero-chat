@@ -1,7 +1,6 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Smart AI with MOOD CHART, Learning & Encrypted Memory by JCB
-# Enhanced with conversation UI, colors, and MSN sound
+# Δ-Zero Chat – Smart AI with MOOD CHART, Encrypted Memory & MSN Ping
 # by JCB
 # --------------------------------------------------------------
 
@@ -153,8 +152,14 @@ class DeltaAgent:
 # --------------------------------------------------------------
 # 2. Streamlit Interface with Conversation Flow
 # --------------------------------------------------------------
+
+# Get folder of app.py for sound file reference
+APP_PATH = os.path.dirname(os.path.abspath(__file__))
+MSN_SOUND_PATH = os.path.join(APP_PATH, "msn_ping.mp3")
+
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 st.title("Δ-Zero Chat 🤖 – Encrypted Shared Learning AI")
+st.markdown("<sub>by JCB</sub>", unsafe_allow_html=True)
 
 agent = DeltaAgent()
 
@@ -196,13 +201,13 @@ if user_input:
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
     st.session_state.chat_history.append({"sender": "bot", "message": response})
 
-    # Play MSN-style ping sound (local file)
+    # Play MSN-style ping sound (local file, absolute path)
     try:
-        with open("msn_ping.mp3", "rb") as f:
+        with open(MSN_SOUND_PATH, "rb") as f:
             audio_bytes = f.read()
         st.audio(audio_bytes, format="audio/mp3")
     except FileNotFoundError:
-        st.warning("⚠️ MSN ping sound not found! Place 'msn_ping.mp3' in the app folder.")
+        st.warning(f"⚠️ MSN ping sound not found! Place 'msn_ping.mp3' in the folder:\n{APP_PATH}")
 
     # Clear input
     st.session_state.user_input = ""
