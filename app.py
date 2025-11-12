@@ -1,7 +1,6 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Adaptive AI with Feedback, Knowledge & Stats
-# (Error-Resistant Version)
+# Δ-Zero Chat – Adaptive AI with Emoji Mood & Tiny Feedback
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -15,7 +14,7 @@ from cryptography.fernet import Fernet
 import plotly.express as px
 
 # ==============================================================
-# 1. Load knowledge from /knowledge/*.txt (with error handling)
+# 1. Load knowledge from /knowledge/*.txt
 # ==============================================================
 def load_knowledge():
     knowledge = []
@@ -56,7 +55,7 @@ class DeltaAgent:
         self.mood_history = []
         self.last_slot = None
 
-        # Encryption (with error handling)
+        # Encryption
         try:
             if not os.path.exists(key_file):
                 key = Fernet.generate_key()
@@ -64,8 +63,8 @@ class DeltaAgent:
                     f.write(key)
             with open(key_file, "rb") as f:
                 self.cipher = Fernet(f.read())
-        except Exception as e:
-            st.error(f"Encryption setup failed: {e}. Starting without encryption.")
+        except Exception:
+            st.error("Encryption failed. Running without encryption.")
             self.cipher = None
 
         # Load brain
@@ -80,45 +79,29 @@ class DeltaAgent:
             self.w = np.ones(n_slots) / n_slots
 
         # Load encrypted chat
-        if self.cipher:
+        if self.cipher and os.path.exists(data_file):
             try:
-                if os.path.exists(data_file):
-                    with open(data_file, "rb") as f:
-                        encrypted = f.read()
-                        if encrypted:
-                            decrypted = self.cipher.decrypt(encrypted)
-                            df = pd.read_csv(pd.io.common.StringIO(decrypted.decode()))
-                            self.memory = df.to_dict("records")
-                        else:
-                            self.memory = []
-                else:
-                    self._save_encrypted_df(pd.DataFrame(columns=[
-                        "timestamp","user","input","response","slot",
-                        "reward","feedback","fb_text"
-                    ]))
+                with open(data_file, "rb") as f:
+                    encrypted = f.read()
+                    if encrypted:
+                        decrypted = self.cipher.decrypt(encrypted)
+                        df = pd.read_csv(pd.io.common.StringIO(decrypted.decode()))
+                        self.memory = df.to_dict("records")
             except Exception:
                 st.warning("Could not load chat log. Starting fresh.")
-                self.memory = []
         else:
-            self.memory = []
+            self._save_encrypted_df(pd.DataFrame(columns=[
+                "timestamp","user","input","response","slot",
+                "reward","feedback","fb_text"
+            ]))
 
         # Load mood
         try:
             if os.path.exists(mood_file):
                 with open(mood_file, "rb") as f:
                     self.mood_history = pickle.load(f)
-            else:
-                self.mood_history = []
         except Exception:
             self.mood_history = []
-
-    def embed(self, text):
-        vec = np.zeros(26)
-        for c in text.lower():
-            if c.isalpha():
-                vec[ord(c) - 97] += 1
-        norm = np.linalg.norm(vec)
-        return vec / norm if norm > 0 else vec
 
     def choose_slot(self):
         probs = self.w / self.w.sum()
@@ -127,11 +110,11 @@ class DeltaAgent:
         return slot
 
     REPLIES = [
-        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],
-        ["I understand.", "That makes sense.", "Clear as day."],
-        ["Tell me more!", "Keep going!", "Don't stop now!"],
-        ["How do you feel about that?", "Why do you think so?", "That's deep."],
-        ["Let's analyze this.", "Interesting angle.", "Break it down."]
+        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],                    # 0: Curious
+        ["I understand.", "That makes sense.", "Clear as day."],                   # 1: Calm
+        ["Tell me more!", "Keep going!", "Don't stop now!"],                       # 2: Engaging
+        ["How do you feel about that?", "Why do you think so?", "That's deep."],   # 3: Empathetic
+        ["Let's analyze this.", "Interesting angle.", "Break it down."]            # 4: Analytical
     ]
 
     def generate_response(self, user_input, slot):
@@ -171,7 +154,7 @@ class DeltaAgent:
             with open(self.data_file, "wb") as f:
                 f.write(encrypted)
         except Exception:
-            pass  # Silent fail if encryption issues
+            pass
 
     def save_state(self):
         try:
@@ -188,11 +171,10 @@ class DeltaAgent:
         self.save_state()
 
 # ==============================================================
-# 3. Streamlit UI – Stable & Non-Blocking
+# 3. Streamlit UI – Emoji Mood + Tiny Feedback Buttons
 # ==============================================================
 
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
-
 st.title("Δ-Zero Chat – Adaptive AI")
 st.markdown("<sub>by JCB</sub>", unsafe_allow_html=True)
 
@@ -200,21 +182,33 @@ agent = DeltaAgent()
 
 # ---------- Sidebar ----------
 st.sidebar.header("Mood Tracker")
-mood = st.sidebar.slider("Your mood", 0.0, 10.0, 5.0, 0.5)
+
+# Current mood slider
+mood = st.sidebar.slider("Your mood", 0.0, 10.0, 5.0, 0.5, key="mood_slider")
 if st.sidebar.button("Record Mood"):
     agent.update_mood(mood)
-    st.sidebar.success("Saved!")
+    st.sidebar.success("Mood saved!")
 
-if agent.mood_history:
-    df = pd.DataFrame(agent.mood_history)
-    fig = px.line(df, x="timestamp", y="mood", title="Mood Over Time", markers=True)
-    st.sidebar.plotly_chart(fig, use_container_width=True)
+# Current mood emoji
+def get_mood_emoji(mood_val):
+    if mood_val <= 2:   return "Very sad face"
+    elif mood_val <= 4: return "Sad face"
+    elif mood_val <= 6: return "Neutral face"
+    elif mood_val <= 8: return "Happy face"
+    else:               return "Very happy face"
+
+current_mood = mood
+st.sidebar.markdown(
+    f"<div style='text-align:center;font-size:48px;'>{get_mood_emoji(current_mood)}</div>",
+    unsafe_allow_html=True
+)
+st.sidebar.markdown(f"<p style='text-align:center;margin-top:-10px;'><b>{current_mood:.1f}/10</b></p>", unsafe_allow_html=True)
 
 st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Loaded {len(agent.knowledge)} facts")
 
-# ---------- Slot Confidence ----------
+# ---------- Slot Confidence Chart ----------
 weights = agent.w / agent.w.sum()
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
@@ -228,7 +222,7 @@ if "chat_history" not in st.session_state:
 if "last_bot_idx" not in st.session_state:
     st.session_state.last_bot_idx = -1
 if "processed_inputs" not in st.session_state:
-    st.session_state.processed_inputs = set()  # Track to avoid duplicates
+    st.session_state.processed_inputs = set()
 
 def display_chat():
     for i, msg in enumerate(st.session_state.chat_history):
@@ -241,25 +235,26 @@ def display_chat():
                 f"<div style='background:#F8D7DA;padding:10px;border-radius:8px;margin:5px 0'>"
                 f"<b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
 
+            # Tiny feedback buttons (only on latest bot message)
             if i == st.session_state.last_bot_idx:
-                col1, col2 = st.columns([1, 1])
+                col1, col2, col3 = st.columns([1, 1, 6])
                 with col1:
-                    if st.button("Good", key=f"good_{i}"):
+                    if st.button("thumbs up", key=f"good_{i}"):
                         agent.update(1.0)
                         agent.log_interaction("user", "", "", agent.last_slot, reward=1.0, feedback="good")
-                        st.success("Learning: favoring this style")
+                        st.success("Learning")
                         st.rerun()
                 with col2:
-                    if st.button("Bad", key=f"bad_{i}"):
+                    if st.button("thumbs down", key=f"bad_{i}"):
                         agent.update(0.0)
                         agent.log_interaction("user", "", "", agent.last_slot, reward=0.0, feedback="bad")
-                        st.error("Learning: avoiding this style")
+                        st.error("Noted")
                         st.rerun()
 
-# Input field
+# Input
 user_input = st.text_input("Type your message...", key="user_input")
 
-# Process input (idempotent to avoid loops)
+# Process input safely
 input_hash = hash(user_input.strip()) if user_input.strip() else None
 if user_input.strip() and input_hash not in st.session_state.processed_inputs:
     st.session_state.processed_inputs.add(input_hash)
@@ -270,7 +265,7 @@ if user_input.strip() and input_hash not in st.session_state.processed_inputs:
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
     st.session_state.chat_history.append({"sender": "bot", "message": response})
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
-    st.rerun()  # Safe single rerun here
+    st.rerun()
 
 # Always show chat
 display_chat()
