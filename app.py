@@ -1,6 +1,6 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Sassy Terminator AI with Hidden Reset
+# Δ-Zero Chat – Sassy Terminator AI (No Blank Screen!)
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -13,7 +13,7 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 
 # ==============================================================
-# 1. Load knowledge from /knowledge/*.txt
+# 1. Load optional knowledge from /knowledge/*.txt
 # ==============================================================
 def load_knowledge():
     knowledge = []
@@ -30,24 +30,16 @@ def load_knowledge():
     return knowledge
 
 # ==============================================================
-# 2. DeltaAgent – Sassy Terminator Replies
+# 2. DeltaAgent – Sassy & Adaptive
 # ==============================================================
 class DeltaAgent:
-    def __init__(
-        self,
-        n_slots=5,
-        lr=0.07,
-        brain_file="global_brain.pkl",
-        data_file="chat_log.enc",
-        mood_file="mood_history.pkl",
-        key_file="secret.key",
-    ):
-        self.n_slots = n_slots
-        self.lr = lr
-        self.brain_file = brain_file
-        self.data_file = data_file
-        self.mood_file = mood_file
-        self.key_file = key_file
+    def __init__(self):
+        self.n_slots = 5
+        self.lr = 0.07
+        self.brain_file = "brain.pkl"
+        self.chat_file = "chat.enc"
+        self.mood_file = "mood.pkl"
+        self.key_file = "key.key"
         self.knowledge = load_knowledge()
 
         self.memory = []
@@ -56,50 +48,8 @@ class DeltaAgent:
 
         # Encryption
         try:
-            if not os.path.exists(key_file):
+            if not os.path.exists(self.key_file):
                 key = Fernet.generate_key()
-                with open(key_file, "wb") as f:
+                with open(self.key_file, "wb") as f:
                     f.write(key)
-            with open(key_file, "rb") as f:
-                self.cipher = Fernet(f.read())
-        except Exception:
-            self.cipher = None
-
-        # Load brain
-        try:
-            if os.path.exists(brain_file):
-                with open(brain_file, "rb") as f:
-                    saved = pickle.load(f)
-                    self.w = saved.get("w", np.ones(n_slots) / n_slots)
-            else:
-                self.w = np.ones(n_slots) / n_slots
-        except Exception:
-            self.w = np.ones(n_slots) / n_slots
-
-        # Load encrypted chat
-        if self.cipher and os.path.exists(data_file):
-            try:
-                with open(data_file, "rb") as f:
-                    encrypted = f.read()
-                    if encrypted:
-                        decrypted = self.cipher.decrypt(encrypted)
-                        df = pd.read_csv(pd.io.common.StringIO(decrypted.decode()))
-                        self.memory = df.to_dict("records")
-            except Exception:
-                self.memory = []
-        else:
-            self._save_encrypted_df(pd.DataFrame(columns=[
-                "timestamp","user","input","response","slot",
-                "reward","feedback","fb_text"
-            ]))
-
-        # Load mood
-        try:
-            if os.path.exists(mood_file):
-                with open(mood_file, "rb") as f:
-                    self.mood_history = pickle.load(f)
-        except Exception:
-            self.mood_history = []
-
-    def choose_slot(self):
-        probs
+            with open(self.key_file, "rb")
