@@ -107,7 +107,7 @@ class DeltaAgent:
         ["I understand.", "That makes sense.", "Clear as day."],                   # 1: Calm
         ["Tell me more!", "Keep going!", "Don't stop now!"],                       # 2: Engaging
         ["How do you feel about that?", "Why do you think so?", "That's deep."],   # 3: Empathetic
-        ["Let's analyze this.", "Interesting angle.", "Break it down."]            | 4: Analytical
+        ["Let's analyze this.", "Interesting angle.", "Break it down."]            # 4: Analytical
     ]
 
     def generate_response(self, user_input, slot):
@@ -162,13 +162,12 @@ class DeltaAgent:
 
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 
-# Intro
+# Intro (no time.sleep to avoid blocking)
 if "intro_shown" not in st.session_state:
     placeholder = st.empty()
     intro = "Welcome to Δ-Zero Chat"
     for i in range(len(intro) + 1):
         placeholder.markdown(f"<h2>{intro[:i]}</h2>", unsafe_allow_html=True)
-        # time.sleep(0.04)  # Removed to prevent blocking
     placeholder.empty()
     st.session_state.intro_shown = True
 
@@ -248,9 +247,9 @@ if user_input.strip():
     st.session_state.chat_history.append({"sender": "bot", "message": response})
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
 
-    # MSN ping REMOVED — no audio, no components.html
+    # MSN PING REMOVED — no audio, no components.html
 
-    st.rerun()   # Safe refresh
+    st.rerun()
 
 # Always show chat
 display_chat()
@@ -272,4 +271,3 @@ if st.button("Show Feedback Summary"):
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No feedback yet.")
-        
