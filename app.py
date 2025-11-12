@@ -48,13 +48,12 @@ def load_conversations():
                             convs.append({"user": user_msg, "bot": bot_msg})
             except Exception as e:
                 st.error(f"Could not read {filename}: {e}")
-    # DEBUG: Only you see this in console
     if convs:
         print(f"[DEBUG] Loaded {len(convs)} movie conversation pairs")
     return convs
 
 # ==============================================================
-# 2. DeltaAgent – Adaptive with TIGHT movie context (3+ words)
+# 2. DeltaAgent – 3+ word match for movie replies
 # ==============================================================
 class DeltaAgent:
     def __init__(
@@ -78,7 +77,7 @@ class DeltaAgent:
         self.mood_history = []
         self.last_slot = None
 
-        # ---------- Encryption ----------
+        # Encryption
         if not os.path.exists(key_file):
             key = Fernet.generate_key()
             with open(key_file, "wb") as f:
@@ -86,7 +85,7 @@ class DeltaAgent:
         with open(key_file, "rb") as f:
             self.cipher = Fernet(f.read())
 
-        # ---------- Load brain ----------
+        # Load brain
         if os.path.exists(brain_file):
             with open(brain_file, "rb") as f:
                 saved = pickle.load(f)
@@ -94,7 +93,7 @@ class DeltaAgent:
         else:
             self.w = np.ones(n_slots) / n_slots
 
-        # ---------- Load encrypted chat log ----------
+        # Load chat log
         if os.path.exists(data_file):
             try:
                 with open(data_file, "rb") as f:
@@ -114,7 +113,7 @@ class DeltaAgent:
                 "reward","feedback","fb_text"
             ]))
 
-        # ---------- Load mood history ----------
+        # Load mood
         if os.path.exists(mood_file):
             with open(mood_file, "rb") as f:
                 self.mood_history = pickle.load(f)
@@ -128,17 +127,17 @@ class DeltaAgent:
         return slot
 
     REPLIES = [
-        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],          # 0: Curious
-        ["I understand.", "That makes sense.", "Clear as day."],          # 1: Calm
-        ["Tell me more!", "Keep going!", "Don't stop now!"],              # 2: Engaging
-        ["How do you feel about that?", "Why do you think so?", "That's deep."],  # 3: Empathetic
-        ["Let's analyze this.", "Interesting angle.", "Break it down."]   # 4: Analytical
+        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],
+        ["I understand.", "That makes sense.", "Clear as day."],
+        ["Tell me more!", "Keep going!", "Don't stop now!"],
+        ["How do you feel about that?", "Why do you think so?", "That's deep."],
+        ["Let's analyze this.", "Interesting angle.", "Break it down."]
     ]
 
     def generate_response(self, user_input, slot):
         base = random.choice(self.REPLIES[slot])
 
-        # <<< 3+ WORD MATCH REQUIRED >>>
+        # 3+ WORD MATCH
         if self.conversations and random.random() < 0.8:
             user_words = set(user_input.lower().split())
             if len(user_words) < 3:
@@ -148,14 +147,13 @@ class DeltaAgent:
             for conv in self.conversations:
                 conv_words = set(conv["user"].lower().split())
                 overlap = len(user_words.intersection(conv_words))
-                if overlap >= 3:  # <<< Requires 3+ matching words
+                if overlap >= 3:
                     candidates.append((conv["bot"], overlap))
             
             if candidates:
                 candidates.sort(key=lambda x: x[1], reverse=True)
                 base = candidates[0][0]
 
-        # Add fun fact
         if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
@@ -202,7 +200,7 @@ class DeltaAgent:
         self.save_state()
 
 # ==============================================================
-# 3. Streamlit UI – CHAT GROWS DOWNWARD, INPUT AT BOTTOM
+# 3. Streamlit UI – FIXED CHAT + INPUT AT BOTTOM
 # ==============================================================
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 st.title("Δ-Zero Chat – Adaptive AI")
@@ -244,44 +242,44 @@ conf_fig = px.bar(
 )
 st.plotly_chart(conf_fig, use_container_width=True)
 
-# ---------- Chat History (Grows DOWNWARD) ----------
+# ---------- Chat History (Single Container) ----------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
     st.session_state.last_bot_idx = -1
 
-# Container for chat (scrollable)
-chat_container = st.container()
+chat_placeholder = st.empty()
 
-with chat_container:
-    for i, msg in enumerate(st.session_state.chat_history):
-        if msg["sender"] == "user":
-            st.markdown(
-                f"<div style='background:#D1E7DD;padding:10px;border-radius:8px;margin:5px 0'>"
-                f"<b>You:</b> {msg['message']}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(
-                f"<div style='background:#F8D7DA;padding:10px;border-radius:8px;margin:5px 0'>"
-                f"<b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
-            if i == st.session_state.last_bot_idx:
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    if st.button("Good", key=f"good_{i}"):
-                        agent.update(1.0)
-                        agent.log_interaction("user", "", "", agent.last_slot,
-                                              reward=1.0, feedback="good")
-                        st.success("Learning: favoring this style")
-                with col2:
-                    if st.button("Bad", key=f"bad_{i}"):
-                        agent.update(0.0)
-                        agent.log_interaction("user", "", "", agent.last_slot,
-                                              reward=0.0, feedback="bad")
-                        st.error("Learning: avoiding this style")
+def render_chat():
+    with chat_placeholder.container():
+        for i, msg in enumerate(st.session_state.chat_history):
+            if msg["sender"] == "user":
+                st.markdown(
+                    f"<div style='background:#D1E7DD;padding:10px;border-radius:8px;margin:5px 0'>"
+                    f"<b>You:</b> {msg['message']}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    f"<div style='background:#F8D7DA;padding:10px;border-radius:8px;margin:5px 0'>"
+                    f"<b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
+                if i == st.session_state.last_bot_idx:
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        if st.button("Good", key=f"good_{i}"):
+                            agent.update(1.0)
+                            agent.log_interaction("user", "", "", agent.last_slot,
+                                                  reward=1.0, feedback="good")
+                            st.success("Learning: favoring this style")
+                    with col2:
+                        if st.button("Bad", key=f"bad_{i}"):
+                            agent.update(0.0)
+                            agent.log_interaction("user", "", "", agent.last_slot,
+                                                  reward=0.0, feedback="bad")
+                            st.error("Learning: avoiding this style")
 
-# ---------- INPUT + SEND BUTTON BELOW (Fixed at bottom) ----------
-input_container = st.container()
+# ---------- INPUT + SEND (Fixed at Bottom) ----------
+input_col = st.container()
 
-with input_container:
+with input_col:
     if "msg_to_send" not in st.session_state:
         st.session_state.msg_to_send = ""
 
@@ -309,15 +307,20 @@ with input_container:
             agent.save_state()
 
             st.session_state.chat_history.append({"sender": "user", "message": msg})
-            st.session_state.chat_history.append({"sender": "bot",  "message": response})
+            st.session_state.chat_history.append({"sender": "bot", "message": response})
             st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
 
             if "pending_message" in st.session_state:
                 del st.session_state.pending_message
+
+            # Force full re-render
             st.rerun()
 
+# Render chat after input
+render_chat()
+
 # --------------------------------------------------------------
-#  Reuse past messages
+# Reuse past messages
 # --------------------------------------------------------------
 if st.checkbox("Reuse past messages"):
     past = [e["input"] for e in agent.memory[-20:] if e["input"]]
@@ -327,7 +330,7 @@ if st.checkbox("Reuse past messages"):
         st.rerun()
 
 # --------------------------------------------------------------
-#  Learning summary
+# Learning summary
 # --------------------------------------------------------------
 if st.button("Show Feedback Summary"):
     fb = [e for e in agent.memory if e["feedback"]]
