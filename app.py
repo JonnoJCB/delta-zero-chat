@@ -23,4 +23,16 @@ def load_knowledge():
     if os.path.exists(knowledge_dir):
         for filename in os.listdir(knowledge_dir):
             if filename.endswith(".txt"):
-                path =
+                path = os.path.join(knowledge_dir, filename)   # <-- Fixed: moved outside 'with'
+                with open(path, "r", encoding="utf-8") as f:
+                    knowledge.extend([line.strip() for line in f if line.strip()])
+    return knowledge
+
+# ==============================================================
+# 2. DeltaAgent – Adaptive with per-slot replies
+# ==============================================================
+class DeltaAgent:
+    def __init__(
+        self,
+        n_slots=5,
+        lr
