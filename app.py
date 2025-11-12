@@ -13,6 +13,7 @@ import random
 from datetime import datetime
 from cryptography.fernet import Fernet
 import plotly.express as px
+import time
 
 # --------------------------------------------------------------
 # 1. DeltaAgent – Smart + Mood Tracking + Encrypted Learning
@@ -153,11 +154,20 @@ class DeltaAgent:
 # 2. Streamlit Interface with Conversation Flow
 # --------------------------------------------------------------
 
-# Get folder of app.py for sound file reference
-APP_PATH = os.path.dirname(os.path.abspath(__file__))
-MSN_SOUND_PATH = os.path.join(APP_PATH, "msn_ping.mp3")
+# Absolute path for MSN ping
+MSN_SOUND_PATH = "/mount/src/delta-zero/msn_ping.mp3"
 
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
+
+# --- Animated intro ---
+intro_container = st.empty()
+intro_text = "💬 Welcome to Δ-Zero Chat – Your Encrypted AI Companion 🤖"
+for i in range(len(intro_text)+1):
+    intro_container.markdown(f"<h2>{intro_text[:i]}</h2>", unsafe_allow_html=True)
+    time.sleep(0.05)
+intro_container.empty()
+
+# Main title after intro
 st.title("Δ-Zero Chat 🤖 – Encrypted Shared Learning AI")
 st.markdown("<sub>by JCB</sub>", unsafe_allow_html=True)
 
@@ -201,13 +211,13 @@ if user_input:
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
     st.session_state.chat_history.append({"sender": "bot", "message": response})
 
-    # Play MSN-style ping sound (local file, absolute path)
+    # Play MSN-style ping sound (absolute path)
     try:
         with open(MSN_SOUND_PATH, "rb") as f:
             audio_bytes = f.read()
         st.audio(audio_bytes, format="audio/mp3")
     except FileNotFoundError:
-        st.warning(f"⚠️ MSN ping sound not found! Place 'msn_ping.mp3' in the folder:\n{APP_PATH}")
+        st.warning(f"⚠️ MSN ping sound not found! Place 'msn_ping.mp3' in /mount/src/delta-zero")
 
     # Clear input
     st.session_state.user_input = ""
@@ -224,3 +234,4 @@ if st.checkbox("Use previous messages"):
 
 # Show total encrypted chat count
 st.sidebar.info(f"Total encrypted chats stored: {len(agent.memory)}")
+
