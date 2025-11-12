@@ -41,7 +41,6 @@ def load_conversations():
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     lines = [line.strip() for line in f if line.strip()]
-                    # Pair consecutive lines: user → bot
                     for i in range(0, len(lines) - 1, 2):
                         user_msg = lines[i]
                         bot_msg = lines[i + 1]
@@ -49,10 +48,13 @@ def load_conversations():
                             convs.append({"user": user_msg, "bot": bot_msg})
             except Exception as e:
                 st.error(f"Could not read {filename}: {e}")
+    # DEBUG: Print count to console (only you see this)
+    if convs:
+        print(f"[DEBUG] Loaded {len(convs)} movie conversation pairs from {conv_dir}")
     return convs
 
 # ==============================================================
-# 2. DeltaAgent – Adaptive with per-slot replies + movie context
+# 2. DeltaAgent – Adaptive with per-slot replies + TIGHT movie context
 # ==============================================================
 class DeltaAgent:
     def __init__(
@@ -71,7 +73,7 @@ class DeltaAgent:
         self.mood_file = mood_file
         self.key_file = key_file
         self.knowledge = load_knowledge()
-        self.conversations = load_conversations()   # <<< NEW: Load movie lines
+        self.conversations = load_conversations()   # Load movie lines
         self.memory = []
         self.mood_history = []
         self.last_slot = None
@@ -134,20 +136,26 @@ class DeltaAgent:
     ]
 
     def generate_response(self, user_input, slot):
-        base = random.choice(self.REPLIES[slot])  # Default personality
+        base = random.choice(self.REPLIES[slot])  # Default fallback
 
-        # <<< NEW: 80% chance to use a real movie line if words match >>>
+        # <<< TIGHTER CONTEXT: 80% chance, needs ≥2 shared words >>>
         if self.conversations and random.random() < 0.8:
             user_words = set(user_input.lower().split())
+            if len(user_words) < 2:
+                return base + f" [slot {slot}]"  # too short to match
+
             candidates = []
             for conv in self.conversations:
                 conv_words = set(conv["user"].lower().split())
                 overlap = len(user_words.intersection(conv_words))
-                if overlap > 0:
+                if overlap >= 2:  # <<< Requires at least 2 matching words
                     candidates.append((conv["bot"], overlap))
+            
             if candidates:
+                # Pick the one with MOST shared words
                 candidates.sort(key=lambda x: x[1], reverse=True)
-                base = candidates[0][0]  # Best matching movie line
+                best_reply = candidates[0][0]
+                base = best_reply
 
         # Add fun fact (20% chance)
         if self.knowledge and random.random() < 0.2:
@@ -228,10 +236,7 @@ else:
 st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Loaded {len(agent.knowledge)} facts")
-if agent.conversations:
-    st.sidebar.success(f"Loaded {len(agent.conversations)} movie lines")
-else:
-    st.sidebar.warning("No movie lines loaded – check /conversations/ folder")
+# REMOVED: "Loaded movie lines" from public sidebar
 
 # ---------- Slot Confidence (small) ----------
 weights = agent.w / agent.w.sum()
@@ -280,7 +285,7 @@ def display_chat():
                         st.error("Learning: avoiding this style")
 
 # --------------------------------------------------------------
-#  INPUT + SEND BUTTON BELOW (Enter key + button)
+#  INPUT + SEND BUTTON BELOW
 # --------------------------------------------------------------
 if "msg_to_send" not in st.session_state:
     st.session_state.msg_to_send = ""
@@ -290,7 +295,6 @@ def submit_on_enter():
         st.session_state.pending_message = st.session_state.msg_to_send
         st.session_state.msg_to_send = ""
 
-# Text input
 user_input = st.text_input(
     "Type your message…",
     placeholder="Ask Δ-Zero anything…",
@@ -298,7 +302,6 @@ user_input = st.text_input(
     on_change=submit_on_enter
 )
 
-# Send button BELOW the input
 send_clicked = st.button("Send", type="primary")
 
 if send_clicked or getattr(st.session_state, "pending_message", None):
