@@ -51,7 +51,7 @@ class DeltaAgent:
         self.mood_history = []
         self.last_slot = None
 
-        # Encryption key
+        # ---------- Encryption ----------
         if not os.path.exists(key_file):
             key = Fernet.generate_key()
             with open(key_file, "wb") as f:
@@ -59,7 +59,7 @@ class DeltaAgent:
         with open(key_file, "rb") as f:
             self.cipher = Fernet(f.read())
 
-        # Load brain
+        # ---------- Load brain ----------
         if os.path.exists(brain_file):
             with open(brain_file, "rb") as f:
                 saved = pickle.load(f)
@@ -67,7 +67,7 @@ class DeltaAgent:
         else:
             self.w = np.ones(n_slots) / n_slots
 
-        # Load encrypted chat
+        # ---------- Load encrypted chat log ----------
         if os.path.exists(data_file):
             try:
                 with open(data_file, "rb") as f:
@@ -87,7 +87,7 @@ class DeltaAgent:
                 "reward","feedback","fb_text"
             ]))
 
-        # Load mood
+        # ---------- Load mood history ----------
         if os.path.exists(mood_file):
             with open(mood_file, "rb") as f:
                 self.mood_history = pickle.load(f)
@@ -110,7 +110,7 @@ class DeltaAgent:
 
     def generate_response(self, user_input, slot):
         base = random.choice(self.REPLIES[slot])
-        if self.knowledge and random.random() < 0.2:   # 20% chance of fun fact
+        if self.knowledge and random.random() < 0.2:   # 20 % fun fact
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
         return base + f" [slot {slot}]"
@@ -182,7 +182,7 @@ st.sidebar.info(f"Chats stored: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Loaded {len(agent.knowledge)} facts")
 
-# ---------- Slot Confidence (smaller) ----------
+# ---------- Slot Confidence (smaller chart) ----------
 weights = agent.w / agent.w.sum()
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
@@ -193,8 +193,7 @@ conf_fig = px.bar(
     title="AI Personality Confidence",
     color="Confidence",
     color_continuous_scale="Blues",
-    height=250,
-    width=int(st.get_option("theme.baseWidth") * 0.8)  # 80% of container
+    height=250                     # fixed small height
 )
 st.plotly_chart(conf_fig, use_container_width=True)
 
@@ -233,7 +232,7 @@ def display_chat():
 user_input = st.text_input("Type your message...", key="user_input")
 
 # Process input
-if user_input.strip():
+if user_input and user_input.strip():
     response, slot = agent.respond(user_input)
     agent.log_interaction("user", user_input, response, slot)
     agent.save_state()
@@ -250,7 +249,10 @@ if st.checkbox("Reuse past messages"):
     past = [e["input"] for e in agent.memory[-20:] if e["input"]]
     sel = st.selectbox("Pick one", [""] + past)
     if sel:
+        # Streamlit does not allow direct assignment to widget value,
+        # but we can pre-fill the text input via a session_state hack:
         st.session_state.user_input = sel
+        st.rerun()
 
 # Learning summary
 if st.button("Show Feedback Summary"):
