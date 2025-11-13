@@ -307,7 +307,59 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
     st.rerun()
 
-# Optional: review learned facts
+# ============================================================== #
+# Δ-Zero AI-to-AI Bootstrapping – Run once or periodically
+# ============================================================== #
+import time
+
+def bootstrap_ai(agent, n_rounds=50):
+    """
+    Seed the agent with AI-to-AI conversations to jumpstart knowledge.
+    n_rounds: how many simulated user-bot exchanges to run
+    """
+    if "bootstrapped" not in st.session_state:
+        st.session_state.bootstrapped = True
+    else:
+        return  # Already bootstrapped this session
+
+    st.info("Bootstrapping Δ-Zero with AI-to-AI conversations...")
+
+    # Step 1: Gather movie facts
+    movie_facts = agent.knowledge.copy() if agent.knowledge else []
+    if not movie_facts:
+        # fallback: some generic movie facts
+        movie_facts = [
+            "Star Wars is a space opera franchise.",
+            "Inception was directed by Christopher Nolan.",
+            "The Matrix features groundbreaking visuals.",
+            "Interstellar explores space and time.",
+            "The Godfather is a classic crime movie."
+        ]
+
+    # Step 2: Social lures for natural conversation
+    social_lures = [
+        "have you seen it?", "what do you think?", "isn't it amazing?", 
+        "right?", "don’t you think?", "it blew my mind!"
+    ]
+
+    # Step 3: Generate AI-to-AI conversations
+    for i in range(n_rounds):
+        # Randomly pick a user-style input
+        user_input = random.choice(movie_facts + social_lures)
+        # Agent responds
+        response, slot = agent.respond(user_input)
+        # Log the interaction
+        agent.log_interaction(user_input, response, slot)
+        # Add facts back to knowledge
+        agent.add_fact(user_input)
+        # Optional: short delay to simulate pacing
+        time.sleep(0.05)
+
+    agent.save_state()
+    st.success(f"Δ-Zero bootstrapped with {n_rounds} AI-to-AI interactions!")
+
+# Call this at the end of app.py if you want to bootstrap on load
+bootstrap_ai(agent, n_rounds=100)
 
 
 
