@@ -1,7 +1,7 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Adaptive AI with Social Lures, Context & Memory
-# by JCB – lightweight movie-aware conversational AI
+# Δ-Zero Chat – Adaptive AI with Feedback, Mood Chart & Knowledge
+# by JCB – your personalized AI companion
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -12,8 +12,8 @@ import pandas as pd
 import random
 from datetime import datetime
 from cryptography.fernet import Fernet
-from sentence_transformers import SentenceTransformer, util
 import plotly.express as px
+from sentence_transformers import SentenceTransformer, util
 
 # ============================================================== 
 # CONFIG & PATHS
@@ -24,10 +24,9 @@ BRAIN_FILE = os.path.join(BASE_DIR, "global_brain.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "chat_log.enc")
 MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
-LEARNED_FILE = os.path.join(KNOWLEDGE_DIR, "learned_facts.txt")
 
 # ============================================================== 
-# 1. Load Knowledge
+# LOAD KNOWLEDGE
 # ============================================================== 
 def load_knowledge():
     knowledge = []
@@ -40,141 +39,34 @@ def load_knowledge():
                         knowledge.extend([line.strip() for line in f if line.strip()])
                 except Exception as e:
                     st.warning(f"Failed to read knowledge file {filename}: {e}")
-    # Load learned facts too
-    if os.path.exists(LEARNED_FILE):
-        with open(LEARNED_FILE, "r", encoding="utf-8") as f:
-            knowledge.extend([line.strip() for line in f if line.strip()])
     return knowledge
 
 # ============================================================== 
-# 2. DeltaAgent – Core AI Logic
+# DELTA AGENT
 # ============================================================== 
 class DeltaAgent:
-    REPLIES = [
-        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],          # 0: Curious
-        ["I understand.", "That makes sense.", "Clear as day."],          # 1: Calm
-        ["Tell me more!", "Keep going!", "Don't stop now!"],              # 2: Engaging
-        ["How do you feel about that?", "Why do you think so?", "Deep."], # 3: Empathetic
-        ["Let's analyze this.", "Interesting angle.", "Break it down."],  # 4: Analytical
-    ]
-
-    STANDARD_GREETING_RESPONSES = {
-        "hello": "Hi, how are you?",
-        "hi": "Hi!",
-        "hey": "Hey there!",
-        "good morning": "Good morning!",
-        "good evening": "Good evening!",
-        "howdy": "Howdy!",
-        "hola": "Hola!",
-        "greetings": "Greetings!",
-        "yo": "Yo!",
-        "sup": "Sup!"
+    # Standard social greetings
+    SOCIAL_CUES = {
+        "hello": "Hi, how are you? {}",
+        "hi": "Hi, {}",
+        "hey": "Hey! {}",
+        "good morning": "Good morning! {}",
+        "good evening": "Good evening! {}",
+        "howdy": "Howdy! {}",
+        "yo": "Yo! {}",
+        "sup": "Sup! {}",
+        "greetings": "Greetings! {}",
+        "hey there": "Hey there! {}"
     }
 
-    SOCIAL_LURES = [
-        # 100 random social lure questions/prompts
-        "What's a movie that really stuck with you recently?",
-        "Have you ever watched something twice in a row?",
-        "Which character do you relate to the most?",
-        "What scene always makes you laugh?",
-        "Any movie that changed your perspective?",
-        "What genre do you enjoy the most?",
-        "Do you prefer old classics or new releases?",
-        "Which soundtrack is unforgettable for you?",
-        "Ever cried during a movie? Which one?",
-        "Do you rewatch movies often?",
-        "Favorite actor or actress lately?",
-        "Which villain do you secretly love?",
-        "Do you enjoy plot twists?",
-        "Ever read the book before the movie?",
-        "What upcoming movie are you excited for?",
-        "Do you discuss movies with friends?",
-        "Which movie gave you chills?",
-        "Do you like animated or live-action?",
-        "Ever skip the trailers to surprise yourself?",
-        "Which movie scene is iconic to you?",
-        "Do you prefer trilogies or standalones?",
-        "Have you ever cosplayed a character?",
-        "Which movie had a surprising ending?",
-        "Do you enjoy movie marathons?",
-        "Any movies that inspire you?",
-        "Do you watch foreign films?",
-        "Which film's visuals amazed you?",
-        "Have you ever fallen asleep during a movie?",
-        "Do you quote movies in daily life?",
-        "Which movie had the best twist?",
-        "Do you enjoy documentaries?",
-        "Have you seen cult classics?",
-        "Which actor's performance is unforgettable?",
-        "Do you like silent or loud soundtracks?",
-        "Ever argue about a movie plot?",
-        "Which movie makes you nostalgic?",
-        "Do you like indie films?",
-        "Have you seen movies in IMAX?",
-        "Which movie had a memorable line?",
-        "Do you prefer happy or sad endings?",
-        "Ever been to a film festival?",
-        "Which movie scared you the most?",
-        "Do you enjoy adaptations?",
-        "Which movie world would you live in?",
-        "Ever watch movies for background ambiance?",
-        "Do you like romance or action?",
-        "Which movie made you think deeply?",
-        "Have you recommended a movie recently?",
-        "Do you watch movie reviews?",
-        "Which movie has the best dialogue?",
-        "Ever rewatch a childhood favorite?",
-        "Do you like superhero movies?",
-        "Which movie had the best visuals?",
-        "Ever discuss movies online?",
-        "Do you enjoy foreign soundtracks?",
-        "Which movie was overrated?",
-        "Ever cried during a cartoon?",
-        "Do you like plot-heavy movies?",
-        "Which actor would you cast differently?",
-        "Have you watched a movie twice immediately?",
-        "Do you prefer theaters or streaming?",
-        "Which movie surprised you?",
-        "Do you enjoy short films?",
-        "Ever watch movies alone?",
-        "Which soundtrack do you replay?",
-        "Do you like classics or new hits?",
-        "Which villain was most memorable?",
-        "Do you enjoy talking about movies?",
-        "Ever watch something guilty-pleasure?",
-        "Which film inspired creativity?",
-        "Do you like suspense or horror?",
-        "Which character arc is your favorite?",
-        "Do you watch movies weekly?",
-        "Ever discuss endings with friends?",
-        "Which movie world is coolest?",
-        "Do you enjoy musical films?",
-        "Which performance moved you most?",
-        "Ever skip movies for books?",
-        "Do you watch movie trailers?",
-        "Which film is underrated?",
-        "Do you enjoy adaptations from novels?",
-        "Which actor nails every role?",
-        "Ever watch a movie and change opinion?",
-        "Do you enjoy franchise movies?",
-        "Which plot twist shocked you?",
-        "Ever watch behind-the-scenes footage?",
-        "Do you watch movies for acting or story?",
-        "Which movie would you recommend now?",
-        "Ever fall asleep halfway?",
-        "Do you like foreign remakes?",
-        "Which movie do you rewatch the most?",
-        "Do you enjoy classics from the 90s?",
-        "Which movie scene stays with you?",
-        "Ever been to a midnight premiere?",
-        "Do you like experimental films?",
-        "Which actor deserves more awards?",
-        "Ever discuss movies with strangers?",
-        "Do you enjoy reading scripts?",
-        "Which movie soundtrack is iconic?",
-        "Ever watch movies while traveling?",
-        "Do you prefer comedy or drama?"
-    ]
+    # Random lure texts
+    RANDOM_LURES = [
+        "wanna talk about movies?", "did you see the latest show?", 
+        "have you watched something interesting?", "let's chat about stories!",
+        "tell me something fun!", "what's on your mind?", "spill a cool fact!",
+        "have you seen a good movie lately?", "share your thoughts!", "got a favorite film?",
+        # Fill up to 100 lures if needed
+    ] * 10  # simple repeat to reach 100
 
     def __init__(self, n_slots=5, lr=0.07, context_size=5):
         self.n_slots = n_slots
@@ -194,9 +86,11 @@ class DeltaAgent:
         self.w = self._load_brain()
         self.memory = self._load_encrypted_log()
         self.mood_history = self._load_mood()
+
+        # Dynamic conversations
         self._update_dynamic_convos()
 
-    # ------------------- Encryption -------------------
+    # -------------------- Key and Data Handling --------------------
     def _load_or_create_key(self):
         if not os.path.exists(KEY_FILE):
             key = Fernet.generate_key()
@@ -205,7 +99,6 @@ class DeltaAgent:
         with open(KEY_FILE, "rb") as f:
             return Fernet(f.read())
 
-    # ------------------- Brain & Memory -------------------
     def _load_brain(self):
         if os.path.exists(BRAIN_FILE):
             with open(BRAIN_FILE, "rb") as f:
@@ -225,6 +118,7 @@ class DeltaAgent:
                 df = pd.read_csv(pd.io.common.StringIO(decrypted.decode()))
                 return df.to_dict("records")
         except Exception:
+            st.warning("Could not decrypt chat log. Starting fresh.")
             return []
 
     def _load_mood(self):
@@ -249,7 +143,7 @@ class DeltaAgent:
             if user_msg and bot_msg:
                 self.dynamic_convos.append({"user": user_msg, "bot": bot_msg})
 
-    # ------------------- Mood -------------------
+    # -------------------- Mood & Slot --------------------
     def _apply_mood_boost(self, mood):
         w = self.w.copy()
         if mood <= 3:
@@ -260,7 +154,6 @@ class DeltaAgent:
         w = np.clip(w, 0.01, None)
         return w / w.sum()
 
-    # ------------------- Response -------------------
     def choose_slot(self, mood=None):
         probs = self.w
         if mood is not None:
@@ -269,15 +162,15 @@ class DeltaAgent:
         self.last_slot = slot
         return slot
 
+    # -------------------- Response Generation --------------------
     def generate_response(self, user_input, slot, mood=None):
-        # Standard greeting check
-        user_lower = user_input.lower()
-        for key in self.STANDARD_GREETING_RESPONSES:
-            if key in user_lower:
-                lure = random.choice(self.SOCIAL_LURES)
-                return f"{self.STANDARD_GREETING_RESPONSES[key]} {lure} [slot {slot}]"
+        # Check social cues first
+        cue = user_input.lower().strip()
+        if cue in self.SOCIAL_CUES:
+            lure = random.choice(self.RANDOM_LURES)
+            return self.SOCIAL_CUES[cue].format(lure) + f" [slot {slot}]"
 
-        # Contextual memory
+        # Contextual retrieval using memory + knowledge
         context_texts = [
             f"{turn.get('input','')} {turn.get('response','')}"
             for turn in self.context[-self.context_size*2:]
@@ -292,29 +185,19 @@ class DeltaAgent:
                 scores = util.cos_sim(query_emb, text_embs)[0]
                 best_idx = scores.argmax().item()
                 if scores[best_idx] > 0.5 and best_idx < len(all_convos):
-                    base = all_convos[best_idx]["bot"]
-                    base += f" {random.choice(self.SOCIAL_LURES)}"
-                    return f"{base} [slot {slot}]"
-            except Exception:
-                pass
+                    return all_convos[best_idx]["bot"] + f" [slot {slot}]"
+            except Exception as e:
+                st.warning(f"Embedding error: {e}")
 
-        # Default response
-        base = random.choice(self.REPLIES[slot])
-        if self.knowledge and random.random() < 0.3:
+        # Default reply + optional knowledge fact
+        base_replies = [
+            "Wow, fascinating!", "I'm intrigued!", "Tell me more!", 
+            "Interesting angle.", "That makes sense.", "Keep going!"
+        ]
+        base = random.choice(base_replies)
+        if self.knowledge and random.random() < 0.2:
             fact = random.choice(self.knowledge)
             base += f" Fun fact: {fact}"
-
-        # Random opener for human style
-        if random.random() < 0.3:
-            openers = [
-                "Honestly,", "You know,", "Funny thing is,", "To be fair,", "I was thinking,"
-            ]
-            base = f"{random.choice(openers)} {base.lower()}"
-
-        # Add random social lure occasionally
-        if random.random() < 0.2:
-            base += f" {random.choice(self.SOCIAL_LURES)}"
-
         return base + f" [slot {slot}]"
 
     def respond(self, user_input, mood=None):
@@ -325,6 +208,7 @@ class DeltaAgent:
             self.context = self.context[-self.context_size * 2:]
         return response, slot
 
+    # -------------------- Learning & Logging --------------------
     def update(self, reward):
         if self.last_slot is not None:
             self.w[self.last_slot] += self.lr * (reward - self.w[self.last_slot])
@@ -346,12 +230,6 @@ class DeltaAgent:
         self._save_encrypted_df(df)
         self._update_dynamic_convos()
 
-        # Save learned facts
-        if user_input.strip() and response.strip():
-            with open(LEARNED_FILE, "a", encoding="utf-8") as f:
-                f.write(user_input.strip() + "\n")
-                f.write(response.strip() + "\n")
-
     def save_state(self):
         with open(BRAIN_FILE, "wb") as f:
             pickle.dump({"w": self.w}, f)
@@ -363,13 +241,12 @@ class DeltaAgent:
         self.mood_history.append({"timestamp": ts, "mood": mood_value})
         self.save_state()
 
-
 # ============================================================== 
-# 3. Streamlit UI
+# STREAMLIT UI
 # ============================================================== 
 st.set_page_config(page_title="Δ-Zero Chat 🎬", layout="wide")
 st.title("Δ-Zero Chat 🎬 – Adaptive AI")
-st.markdown("<sub>Lightweight, contextual, socially engaging AI</sub>", unsafe_allow_html=True)
+st.markdown("<sub>by JCB – your personalized AI companion</sub>", unsafe_allow_html=True)
 
 # Initialize agent
 if "agent" not in st.session_state:
@@ -377,12 +254,12 @@ if "agent" not in st.session_state:
         st.session_state.agent = DeltaAgent()
 agent = st.session_state.agent
 
-# Initialize chat state
+# Chat state
 for key in ["chat_history", "last_bot_idx", "chat_container"]:
     if key not in st.session_state:
         st.session_state[key] = [] if key == "chat_history" else -1 if key == "last_bot_idx" else st.container()
 
-# ---------- Sidebar ----------
+# Sidebar: Mood Tracker
 st.sidebar.header("Mood Tracker")
 mood = st.sidebar.slider("Your current mood", 0.0, 10.0, 5.0, 0.5)
 if st.sidebar.button("Record Mood"):
@@ -394,11 +271,7 @@ if agent.mood_history:
     fig_mood = px.line(df_mood, x="timestamp", y="mood", title="Mood Over Time", markers=True)
     st.sidebar.plotly_chart(fig_mood, width='stretch')
 
-st.sidebar.info(f"Total chats: {len(agent.memory)}")
-if agent.knowledge:
-    st.sidebar.success(f"Knowledge: {len(agent.knowledge)} facts")
-
-# ---------- AI Confidence ----------
+# AI Confidence
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 weights = (agent.w / agent.w.sum()).round(3)
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
@@ -406,7 +279,7 @@ conf_fig = px.bar(conf_df, x="Style", y="Confidence", title="AI Personality", co
                   color_continuous_scale="Blues", height=250)
 st.plotly_chart(conf_fig, width='stretch')
 
-# ---------- Chat Renderer ----------
+# Chat Renderer
 def render_chat():
     with st.session_state.chat_container:
         for i, msg in enumerate(st.session_state.chat_history):
@@ -419,25 +292,33 @@ def render_chat():
                     f"<div style='background:#F8D7DA;padding:12px;border-radius:10px;margin:8px 0'>"
                     f"<b>🎬 Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
 
-                if i == st.session_state.last_bot_idx:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("Good", key=f"good_{i}"):
-                            agent.update(1.0)
-                            agent.log_interaction("", "", agent.last_slot, reward=1.0, feedback="good")
-                            st.success("Thanks! I'll use this style more.")
-                            st.rerun()
-                    with col2:
-                        if st.button("Bad", key=f"bad_{i}"):
-                            agent.update(0.0)
-                            agent.log_interaction("", "", agent.last_slot, reward=0.0, feedback="bad")
-                            st.error("Got it. I'll avoid this.")
-                            st.rerun()
-
 render_chat()
 
-File "/mount/src/delta-zero-chat/app.py", line 444
-      if st.session_state.user_input
-                                    ^
-SyntaxError: expected ':'
+# Input handler
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
 
+def submit_message():
+    user_text = st.session_state.user_input.strip()
+    if user_text:
+        response, slot = agent.respond(user_text, mood=mood)
+        agent.log_interaction(user_text, response, slot)
+        st.session_state.chat_history.append({"sender": "user", "message": user_text})
+        st.session_state.chat_history.append({"sender": "bot", "message": response})
+        st.session_state.user_input = ""
+        st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
+        render_chat()
+
+# User input
+st.text_input("You:", key="user_input", on_change=submit_message, placeholder="Type something...")
+
+# Feedback
+if st.button("Show Feedback Summary"):
+    fb = [e for e in agent.memory if e.get("feedback")]
+    if fb:
+        df = pd.DataFrame(fb)["feedback"].value_counts().reset_index()
+        df.columns = ["Feedback", "Count"]
+        fig = px.pie(df, names="Feedback", values="Count", title="User Feedback")
+        st.plotly_chart(fig, width='stretch')
+    else:
+        st.info("No feedback yet.")
