@@ -194,4 +194,148 @@ class DeltaAgent:
     def _apply_mood_boost(self, mood):
         w = self.w.copy()
         if mood <= 3:
-            w[3] *= 1.4  # Empat*
+            w[3] *= 1.4  # Empathetic
+        elif mood >= 7:
+            w[0] *= 1.3  # Curious
+            w[2] *= 1.3  # Engaging
+        return w / w.sum()
+
+    def choose_slot(self, mood=None):
+        probs = self._apply_mood_boost(mood) if mood is not None else self.w
+        slot = np.random.choice(self.n_slots, p=probs)
+        self.last_slot = slot
+        return slot
+
+    def _refresh_vectorizer(self):
+        recent_memory = self.memory[-MAX_MEMORY:]
+        valid_memory_texts = [
+            str(m.get('input', '')) + " " + str(m.get('response', ''))
+            for m in recent_memory
+            if isinstance(m, dict)
+        ]
+        texts = self.knowledge + valid_memory_texts
+        if texts:
+            self.vectorizer = TfidfVectorizer(stop_words="english")
+            self.knowledge_matrix = self.vectorizer.fit_transform(texts)
+        else:
+            self.knowledge_matrix = None
+
+    def refresh_knowledge(self):
+        self.knowledge = load_knowledge()
+        self._refresh_vectorizer()
+
+    # ------------------- FAST FACT ADDITION ------------------- #
+    def add_fact(self, text):
+        if not os.path.exists(KNOWLEDGE_DIR):
+            os.makedirs(KNOWLEDGE_DIR)
+        if text.strip() and text.strip() not in self.knowledge:
+            # Append to multiple fact files if desired
+            path = os.path.join(KNOWLEDGE_DIR, "learned_facts.txt")
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(text.strip() + "\n")
+            # Immediately refresh vectorizer to allow fast responses
+            self.refresh_knowledge()
+
+    def generate_response(self, user_input, slot, mood=None):
+        """Generate response quickly using TF-IDF and fallback replies."""
+        response = ""
+        if self.knowledge and self.knowledge_matrix is not None:
+            try:
+                query_vec = self.vectorizer.transform([user_input])
+                sims = cosine_similarity(query_vec, self.knowledge_matrix).flatten()
+                best_idx = sims.argmax()
+                if sims[best_idx] > 0.15:
+                    fact = self.knowledge[best_idx]
+                    response = f"{fact}"
+            except Exception as e:
+                print("TF-IDF error:", e)
+        if not response:
+            response = random.choice(self.REPLIES[slot])
+        return response + f" [slot {slot}]"
+
+    def respond(self, user_input, mood=None):
+        slot = self.choose_slot(mood)
+        response = self.generate_response(user_input, slot, mood)
+        return response, slot
+
+    def log_interaction(self, user_input, response, slot, reward=None, feedback=None):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = {"timestamp": ts, "input": user_input, "response": response,
+                 "slot": slot, "reward": reward, "feedback": feedback}
+        self.memory.append(entry)
+        df = pd.DataFrame(self.memory)
+        self._save_encrypted_df(df)
+        # Auto-learn new facts if sentence contains key information
+        if any(word in user_input.lower() for word in ["was", "is", "are", "released", "directed", "stars"]):
+            self.add_fact(user_input)
+        self._refresh_vectorizer()
+
+    def save_state(self):
+        with open(BRAIN_FILE, "wb") as f:
+            pickle.dump({"w": self.w}, f)
+        with open(MOOD_FILE, "wb") as f:
+            pickle.dump(self.mood_history, f)
+
+    def update_mood(self, mood_value):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.mood_history.append({"timestamp": ts, "mood": mood_value})
+        self.save_state()
+
+# ============================================================== #
+# INITIALIZE AGENT
+# ============================================================== #
+if "agent" not in st.session_state:
+    with st.spinner("Initializing Δ-Zero..."):
+        st.session_state.agent = DeltaAgent()
+agent = st.session_state.agent
+
+# ============================================================== #
+# HEADER WITH LOGO
+# ============================================================== #
+st.markdown(f"""
+<div style="display:flex;align-items:center">
+    <img class="header-logo" src="assets/logo.jpg">
+    <h1 style="margin:0;color:#ffffff">Δ-Zero Chat – Adaptive AI</h1>
+</div>
+""", unsafe_allow_html=True)
+st.markdown("<sub style='color:#c0c0c0'>by JCB – contextual and evolving</sub>", unsafe_allow_html=True)
+
+# ============================================================== #
+# SIDEBAR
+# ============================================================== #
+st.sidebar.header("Mood Tracker")
+mood = st.sidebar.slider("Your current mood", 0.0, 10.0, 5.0, 0.5)
+if st.sidebar.button("Record Mood"):
+    agent.update_mood(mood)
+    st.sidebar.success("Mood recorded!")
+
+if agent.mood_history:
+    df_mood = pd.DataFrame(agent.mood_history)
+    st.sidebar.line_chart(df_mood.set_index("timestamp")["mood"])
+
+st.sidebar.info(f"Total chats: {len(agent.memory)}")
+if agent.knowledge:
+    st.sidebar.success(f"Knowledge base: {len(agent.knowledge)} entries")
+
+# ============================================================== #
+# CHAT INTERFACE
+# ============================================================== #
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+def render_chat():
+    for msg in st.session_state.chat_history:
+        if msg["sender"] == "user":
+            st.markdown(f"<div class='user-bubble'><b>You:</b> {msg['message']}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='bot-bubble'><b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
+
+render_chat()
+
+if user_input := st.chat_input("Talk to Δ-Zero..."):
+    response, slot = agent.respond(user_input, mood)
+    agent.log_interaction(user_input, response, slot)
+    agent.save_state()
+    st.session_state.chat_history.append({"sender": "user", "message": user_input})
+    st.session_state.chat_history.append({"sender": "bot", "message": response})
+    st.rerun()
