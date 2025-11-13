@@ -1,7 +1,6 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Adaptive AI (Fast + Contextual from knowledge/)
-# by JCB
+# Δ-Zero Chat – Adaptive AI with Incremental Learning
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -21,13 +20,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 # ============================================================== #
 BASE_DIR = os.path.dirname(__file__)
 KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
+LEARNED_FILE = os.path.join(KNOWLEDGE_DIR, "learned_facts.txt")
 BRAIN_FILE = os.path.join(BASE_DIR, "global_brain.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "chat_log.enc")
 MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
 
 # ============================================================== #
-# LOAD KNOWLEDGE FILES
+# LOAD KNOWLEDGE
 # ============================================================== #
 def load_knowledge():
     """Load all lines from text files inside /knowledge folder."""
@@ -36,11 +36,14 @@ def load_knowledge():
         for f in os.listdir(KNOWLEDGE_DIR):
             if f.endswith(".txt"):
                 path = os.path.join(KNOWLEDGE_DIR, f)
-                with open(path, "r", encoding="utf-8") as file:
-                    for line in file:
-                        text = line.strip()
-                        if text:
-                            knowledge.append(text)
+                try:
+                    with open(path, "r", encoding="utf-8") as file:
+                        for line in file:
+                            text = line.strip()
+                            if text:
+                                knowledge.append(text)
+                except Exception as e:
+                    st.warning(f"Could not read {f}: {e}")
     return knowledge
 
 # ============================================================== #
@@ -68,16 +71,16 @@ class DeltaAgent:
         # Encryption setup
         self.cipher = self._load_or_create_key()
 
-        # Load previous state
+        # Load saved states
         self.w = self._load_brain()
         self.memory = self._load_encrypted_log()
         self.mood_history = self._load_mood()
 
-        # Prepare lightweight text vectorizer for contextual retrieval
+        # Fit context retriever
         self.vectorizer = TfidfVectorizer(stop_words="english")
         self._fit_vectorizer()
 
-    # ------------------- internal ------------------- #
+    # ------------------- FILE UTILITIES ------------------- #
     def _fit_vectorizer(self):
         if self.knowledge:
             self.knowledge_vectors = self.vectorizer.fit_transform(self.knowledge)
@@ -125,7 +128,7 @@ class DeltaAgent:
         with open(DATA_FILE, "wb") as f:
             f.write(encrypted)
 
-    # ------------------- mood weighting ------------------- #
+    # ------------------- LEARNING ------------------- #
     def _apply_mood_boost(self, mood):
         w = self.w.copy()
         if mood <= 3:
@@ -141,37 +144,51 @@ class DeltaAgent:
         self.last_slot = slot
         return slot
 
-    # ------------------- response logic ------------------- #
+    # ------------------- RESPONSES ------------------- #
     def generate_response(self, user_input, slot, mood=None):
         if not user_input:
             return random.choice(self.REPLIES[slot])
 
-        # Try contextual match from knowledge base
+        # Context retrieval from knowledge
         if self.knowledge and self.knowledge_vectors is not None:
             try:
                 query_vec = self.vectorizer.transform([user_input])
                 sims = cosine_similarity(query_vec, self.knowledge_vectors)[0]
                 best_idx = int(np.argmax(sims))
-                if sims[best_idx] > 0.1:
-                    base = self.knowledge[best_idx]
-                    return base + f" [slot {slot}]"
+                if sims[best_idx] > 0.15:
+                    return self.knowledge[best_idx] + f" [slot {slot}]"
             except Exception as e:
                 print("Context retrieval error:", e)
 
-        # fallback generic response
+        # fallback
         base = random.choice(self.REPLIES[slot])
-        if random.random() < 0.3 and self.knowledge:
-            base += " Fun fact: " + random.choice(self.knowledge)
         return base + f" [slot {slot}]"
 
     def respond(self, user_input, mood=None):
         slot = self.choose_slot(mood)
         response = self.generate_response(user_input, slot, mood)
+
+        # auto-learning: store new interesting facts
+        self._auto_learn(user_input, response)
+
         self.context.append({"input": user_input, "response": response})
         self.context = self.context[-self.context_size * 2:]
         return response, slot
 
-    # ------------------- learning ------------------- #
+    # ------------------- AUTO-LEARNING ------------------- #
+    def _auto_learn(self, user_input, response):
+        """If the user says something that looks like new information, store it."""
+        if len(user_input.split()) > 3 and not any(user_input.lower() in k.lower() for k in self.knowledge):
+            try:
+                os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
+                with open(LEARNED_FILE, "a", encoding="utf-8") as f:
+                    f.write(user_input.strip() + "\n")
+                self.knowledge.append(user_input.strip())
+                self._fit_vectorizer()
+            except Exception as e:
+                print("Learning save error:", e)
+
+    # ------------------- UPDATES ------------------- #
     def update(self, reward):
         if self.last_slot is not None:
             self.w[self.last_slot] += self.lr * (reward - self.w[self.last_slot])
@@ -202,15 +219,15 @@ class DeltaAgent:
 # ============================================================== #
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
 st.title("🤖 Δ-Zero Chat – Adaptive AI")
-st.markdown("<sub>by JCB – your adaptive robot companion</sub>", unsafe_allow_html=True)
+st.markdown("<sub>by JCB – self-learning AI companion</sub>", unsafe_allow_html=True)
 
 # Initialize agent
 if "agent" not in st.session_state:
-    with st.spinner("Loading Δ-Zero's circuits..."):
+    with st.spinner("Booting Δ-Zero neural circuits..."):
         st.session_state.agent = DeltaAgent()
 agent = st.session_state.agent
 
-# Sidebar – Mood Tracker
+# Sidebar
 st.sidebar.header("Mood Tracker")
 mood = st.sidebar.slider("Your current mood", 0.0, 10.0, 5.0, 0.5)
 if st.sidebar.button("Record Mood"):
@@ -224,10 +241,9 @@ if agent.mood_history:
     st.sidebar.plotly_chart(fig_mood, width="stretch")
 
 st.sidebar.info(f"Total chats: {len(agent.memory)}")
-if agent.knowledge:
-    st.sidebar.success(f"Knowledge loaded: {len(agent.knowledge)} entries")
+st.sidebar.success(f"Knowledge entries: {len(agent.knowledge)}")
 
-# Confidence / Personality
+# Confidence display
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 weights = (agent.w / agent.w.sum()).round(3)
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
@@ -236,7 +252,7 @@ conf_fig = px.bar(conf_df, x="Style", y="Confidence",
                   color_continuous_scale="Blues", height=250)
 st.plotly_chart(conf_fig, width="stretch")
 
-# Chat History
+# Chat
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
@@ -266,7 +282,7 @@ def render_chat():
 render_chat()
 
 # Input
-if user_input := st.chat_input("Ask me anything…"):
+if user_input := st.chat_input("Talk to Δ-Zero…"):
     with st.spinner("Δ-Zero is processing..."):
         response, slot = agent.respond(user_input, mood)
     agent.log_interaction(user_input, response, slot)
@@ -275,15 +291,3 @@ if user_input := st.chat_input("Ask me anything…"):
     st.session_state.chat_history.append({"sender": "bot", "message": response})
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
     st.rerun()
-
-# Feedback summary
-if st.button("Show Feedback Summary"):
-    fb = [e for e in agent.memory if e.get("feedback")]
-    if fb:
-        df = pd.DataFrame(fb)["feedback"].value_counts().reset_index()
-        df.columns = ["Feedback", "Count"]
-        fig = px.pie(df, names="Feedback", values="Count",
-                     title="User Feedback Summary")
-        st.plotly_chart(fig, width="stretch")
-    else:
-        st.info("No feedback yet.")
