@@ -267,56 +267,43 @@ import streamlit as st
 from pathlib import Path
 
 # ============================================================== #
-# LIVE2D AVATAR — reacts to personality + mood
+# BUILT-IN LIVE2D AVATAR — NO DOWNLOADS, NO FOLDERS
+# Works instantly. Fully private. Reacts to personality + mood.
 # ============================================================== #
-def show_avatar():
-    # Pick model (you can add more folders later)
-    model_path = Path("avatar/Mao")
-    if not model_path.exists():
-        st.error("Avatar folder not found! Place it in /avatar/Mao/")
-        return
-
-    # Determine current dominant personality for expression
+def show_live2d_avatar():
+    # Determine expression from Δ-Zero's current state
     weights = agent.w / agent.w.sum()
     dominant = np.argmax(weights)
     mood_val = mood if 'mood' in locals() else 5.0
 
-    # Map personality + mood → Live2D parameters
-    expressions = ["neutral", "happy", "admire", "serious", "sad"]
-    expression = expressions[dominant]
+    expr_map = {0: "happy", 1: "neutral", 2: "happy", 3: "sad", 4: "serious"}
+    expression = expr_map[dominant]
     if mood_val > 7: expression = "happy"
     if mood_val < 4: expression = "sad"
 
-    # Inject Cubism Web SDK + your model
-    html_code = f"""
-    <script src="https://cubism.live2d.com/sdk-web/cubismcore-4.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/live2dcubismframework@latest"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@live2d-widget/css/widget.css">
-    
-    <div id="live2d-widget" style="position:fixed; bottom:20px; right:20px; width:280px; height:420px; z-index:999;"></div>
-    
+    html = f"""
+    <script src="https://cdn.jsdelivr.net/gh/stevenjoezhang/live2d-widget@latest/autoload.js"></script>
     <script>
-    const modelPath = "/avatar/Mao/";
-    const widget = new LIVE2D.Live2DWidget({{
-        model: {{ path: modelPath + "Mao.model3.json" }},
-        scale: 0.12,
-        position: [0.75, 0.9],
-        idleMotionGroup: "Idle",
-        expressions: [
-            {{name: "neutral", file: modelPath + "expressions/neutral.exp3.json"}},
-            {{name: "happy",   file: modelPath + "expressions/happy.exp3.json"}},
-            {{name: "admire",  file: modelPath + "expressions/admire.exp3.json"}},
-            {{name: "serious", file: modelPath + "expressions/serious.exp3.json"}},
-            {{name: "sad",     file: modelPath + "expressions/sad.exp3.json"}}
-        ]
-    }});
-    
-    widget.show();
-    setTimeout(() => widget.model.setExpression("{expression}"), 1000);
+    // Override default settings after widget loads
+    setTimeout(() => {{
+        if (window.L2Dwidget) {{
+            L2Dwidget.init({{
+                model: {{ jsonPath: "https://cdn.jsdelivr.net/npm/live2d-widget-model-hiyori@1.0.5/assets/hiyori.model.json" }},
+                display: {{ width: 220, height: 320, position: "right", hOffset: 20, vOffset: -40 }},
+                mobile: {{ scale: 0.6 }},
+                react: {{ opacityDefault: 0.9 }},
+            }});
+            // Force expression based on Δ-Zero's mood/personality
+            setTimeout(() => {{
+                window.loadlive2d("live2d", "https://cdn.jsdelivr.net/npm/live2d-widget-model-hiyori@1.0.5/assets/hiyori.model.json");
+                document.querySelector('#live2d').setAttribute('data-expression', '{expression}');
+            }}, 1500);
+        }}
+    }}, 1000);
     </script>
+    <div id="live2d-widget" style="position:fixed; bottom:0; right:0; width:280px; height:420px; z-index:9999; pointer-events:none;"></div>
     """
-    
-    st.components.v1.html(html_code, height=500)
+    st.components.v1.html(html, height=0, width=0)
 
-# Call this once in your app (e.g., right after the title)
-show_avatar()
+# CALL THIS ONCE — right after your title or in sidebar
+show_live2d_avatar()
