@@ -333,7 +333,7 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
 # ============================================================== #
 # Δ-Zero AI-to-AI Bootstrapping – Run once or periodically
 # ============================================================== #
-def bootstrap_ai(agent, n_rounds=1):
+def bootstrap_ai(agent, n_rounds=11):
     if "bootstrapped" not in st.session_state:
         st.session_state.bootstrapped = True
     else:
@@ -370,6 +370,7 @@ def bootstrap_ai(agent, n_rounds=1):
     st.success(f"Welcome... give me feedback to help me learn!")
 
 bootstrap_ai(agent, n_rounds=100)
+
 
 
 
