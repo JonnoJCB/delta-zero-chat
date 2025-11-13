@@ -1,7 +1,7 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Adaptive AI with Feedback, Mood Chart & Knowledge
-# by JCB – fixed responsive contextual version
+# Δ-Zero Chat – Adaptive AI (Fast + Contextual from knowledge/)
+# by JCB
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -27,9 +27,10 @@ MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
 
 # ============================================================== #
-# LOAD KNOWLEDGE
+# LOAD KNOWLEDGE FILES
 # ============================================================== #
 def load_knowledge():
+    """Load all lines from text files inside /knowledge folder."""
     knowledge = []
     if os.path.exists(KNOWLEDGE_DIR):
         for f in os.listdir(KNOWLEDGE_DIR):
@@ -37,9 +38,9 @@ def load_knowledge():
                 path = os.path.join(KNOWLEDGE_DIR, f)
                 with open(path, "r", encoding="utf-8") as file:
                     for line in file:
-                        line = line.strip()
-                        if line:
-                            knowledge.append(line)
+                        text = line.strip()
+                        if text:
+                            knowledge.append(text)
     return knowledge
 
 # ============================================================== #
@@ -64,15 +65,15 @@ class DeltaAgent:
         self.context = []
         self.last_slot = None
 
-        # Encryption
+        # Encryption setup
         self.cipher = self._load_or_create_key()
 
-        # Load persistent state
+        # Load previous state
         self.w = self._load_brain()
         self.memory = self._load_encrypted_log()
         self.mood_history = self._load_mood()
 
-        # Vectorizer for contextual retrieval
+        # Prepare lightweight text vectorizer for contextual retrieval
         self.vectorizer = TfidfVectorizer(stop_words="english")
         self._fit_vectorizer()
 
@@ -145,7 +146,7 @@ class DeltaAgent:
         if not user_input:
             return random.choice(self.REPLIES[slot])
 
-        # Try contextual match from movie.txt
+        # Try contextual match from knowledge base
         if self.knowledge and self.knowledge_vectors is not None:
             try:
                 query_vec = self.vectorizer.transform([user_input])
@@ -154,4 +155,135 @@ class DeltaAgent:
                 if sims[best_idx] > 0.1:
                     base = self.knowledge[best_idx]
                     return base + f" [slot {slot}]"
-            except Exce
+            except Exception as e:
+                print("Context retrieval error:", e)
+
+        # fallback generic response
+        base = random.choice(self.REPLIES[slot])
+        if random.random() < 0.3 and self.knowledge:
+            base += " Fun fact: " + random.choice(self.knowledge)
+        return base + f" [slot {slot}]"
+
+    def respond(self, user_input, mood=None):
+        slot = self.choose_slot(mood)
+        response = self.generate_response(user_input, slot, mood)
+        self.context.append({"input": user_input, "response": response})
+        self.context = self.context[-self.context_size * 2:]
+        return response, slot
+
+    # ------------------- learning ------------------- #
+    def update(self, reward):
+        if self.last_slot is not None:
+            self.w[self.last_slot] += self.lr * (reward - self.w[self.last_slot])
+            self.w = np.clip(self.w, 0.01, None)
+            self.w /= self.w.sum()
+
+    def log_interaction(self, user_input, response, slot, reward=None, feedback=None):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = {"timestamp": ts, "input": user_input, "response": response,
+                 "slot": slot, "reward": reward, "feedback": feedback}
+        self.memory.append(entry)
+        df = pd.DataFrame(self.memory)
+        self._save_encrypted_df(df)
+
+    def save_state(self):
+        with open(BRAIN_FILE, "wb") as f:
+            pickle.dump({"w": self.w}, f)
+        with open(MOOD_FILE, "wb") as f:
+            pickle.dump(self.mood_history, f)
+
+    def update_mood(self, mood_value):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.mood_history.append({"timestamp": ts, "mood": mood_value})
+        self.save_state()
+
+# ============================================================== #
+# STREAMLIT INTERFACE
+# ============================================================== #
+st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
+st.title("🤖 Δ-Zero Chat – Adaptive AI")
+st.markdown("<sub>by JCB – your adaptive robot companion</sub>", unsafe_allow_html=True)
+
+# Initialize agent
+if "agent" not in st.session_state:
+    with st.spinner("Loading Δ-Zero's circuits..."):
+        st.session_state.agent = DeltaAgent()
+agent = st.session_state.agent
+
+# Sidebar – Mood Tracker
+st.sidebar.header("Mood Tracker")
+mood = st.sidebar.slider("Your current mood", 0.0, 10.0, 5.0, 0.5)
+if st.sidebar.button("Record Mood"):
+    agent.update_mood(mood)
+    st.sidebar.success("Mood recorded!")
+
+if agent.mood_history:
+    df_mood = pd.DataFrame(agent.mood_history)
+    fig_mood = px.line(df_mood, x="timestamp", y="mood",
+                       title="Mood Over Time", markers=True)
+    st.sidebar.plotly_chart(fig_mood, width="stretch")
+
+st.sidebar.info(f"Total chats: {len(agent.memory)}")
+if agent.knowledge:
+    st.sidebar.success(f"Knowledge loaded: {len(agent.knowledge)} entries")
+
+# Confidence / Personality
+slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
+weights = (agent.w / agent.w.sum()).round(3)
+conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
+conf_fig = px.bar(conf_df, x="Style", y="Confidence",
+                  color="Confidence", title="AI Personality",
+                  color_continuous_scale="Blues", height=250)
+st.plotly_chart(conf_fig, width="stretch")
+
+# Chat History
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "last_bot_idx" not in st.session_state:
+    st.session_state.last_bot_idx = -1
+
+def render_chat():
+    for i, msg in enumerate(st.session_state.chat_history):
+        if msg["sender"] == "user":
+            st.markdown(
+                f"<div style='background:#D1E7DD;padding:10px;border-radius:8px;text-align:right'>"
+                f"<b>You:</b> {msg['message']}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f"<div style='background:#F8D7DA;padding:10px;border-radius:8px'>"
+                f"<b>Δ-Zero:</b> {msg['message']}</div>", unsafe_allow_html=True)
+            if i == st.session_state.last_bot_idx:
+                c1, c2 = st.columns(2)
+                if c1.button("👍", key=f"good_{i}"):
+                    agent.update(1.0)
+                    agent.log_interaction("", "", agent.last_slot, reward=1.0, feedback="good")
+                    st.rerun()
+                if c2.button("👎", key=f"bad_{i}"):
+                    agent.update(0.0)
+                    agent.log_interaction("", "", agent.last_slot, reward=0.0, feedback="bad")
+                    st.rerun()
+
+render_chat()
+
+# Input
+if user_input := st.chat_input("Ask me anything…"):
+    with st.spinner("Δ-Zero is processing..."):
+        response, slot = agent.respond(user_input, mood)
+    agent.log_interaction(user_input, response, slot)
+    agent.save_state()
+    st.session_state.chat_history.append({"sender": "user", "message": user_input})
+    st.session_state.chat_history.append({"sender": "bot", "message": response})
+    st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
+    st.rerun()
+
+# Feedback summary
+if st.button("Show Feedback Summary"):
+    fb = [e for e in agent.memory if e.get("feedback")]
+    if fb:
+        df = pd.DataFrame(fb)["feedback"].value_counts().reset_index()
+        df.columns = ["Feedback", "Count"]
+        fig = px.pie(df, names="Feedback", values="Count",
+                     title="User Feedback Summary")
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("No feedback yet.")
