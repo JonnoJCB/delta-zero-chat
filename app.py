@@ -332,7 +332,7 @@ def bootstrap_ai(agent, n_rounds=50):
     else:
         return  # Already bootstrapped this session
 
-    st.info("Initialising Delta-Zero...")
+    st.info("Initialising Δ-Zero...")
 
     # Step 1: Gather movie facts
     movie_facts = agent.knowledge.copy() if agent.knowledge else []
@@ -366,7 +366,7 @@ def bootstrap_ai(agent, n_rounds=50):
         time.sleep(0.05)
 
     agent.save_state()
-    st.success(f"Δ-Zero bootstrapped with {n_rounds} AI-to-AI interactions!")
+    st.success(f"Initialised... {n_rounds} give me feedback to help me learn!")
 
 # Call this at the end of app.py if you want to bootstrap on load
 bootstrap_ai(agent, n_rounds=100)
@@ -394,6 +394,7 @@ def add_bulk_facts(agent, big_text, chunk_prob=(1, 3)):
         for line in chunk:
             agent.add_fact(line)
         i += chunk_size
+
 
 
 
