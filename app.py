@@ -26,6 +26,7 @@ BRAIN_FILE = os.path.join(BASE_DIR, "global_brain.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "chat_log.enc")
 MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
+LOGO_FILE = os.path.join(BASE_DIR, "assets", "logo.jpg")
 MAX_MEMORY = 500  # keep only 500 recent chats for recall
 
 # ============================================================== #
@@ -169,7 +170,7 @@ class DeltaAgent:
                 self.refresh_knowledge()
 
     def generate_response(self, user_input, slot, mood=None):
-        """Generate contextual conversational response."""
+        """Generate contextual conversational response without 'I think'."""
         response = ""
 
         # --- Contextual pull from memory/knowledge ---
@@ -180,13 +181,12 @@ class DeltaAgent:
                 best_idx = sims.argmax()
                 if sims[best_idx] > 0.15:
                     fact = self.knowledge[best_idx]
-                    # Avoid duplicate fact in response
-                    response = random.choice([
-                        f"Did you know? {fact}",
-                        f"Here's something interesting: {fact}",
-                        f"Fun fact: {fact}",
-                        f"{fact}"
+                    base = random.choice([
+                        f"{fact}",
+                        f"Interesting: {fact}",
+                        f"By the way, {fact}"
                     ])
+                    response = base
             except Exception as e:
                 print("TF-IDF error:", e)
 
@@ -203,11 +203,9 @@ class DeltaAgent:
             response += " " + random.choice(softeners)
 
         # --- Chance to drop a knowledge fun fact ---
-        if self.knowledge and random.random() < 0.4:
+        if self.knowledge and random.random() < 0.25:
             extra = random.choice(self.knowledge)
-            # Avoid repeating the same fact in one response
-            if extra not in response:
-                response += f" By the way, {extra.lower()}"
+            response += f" {extra.lower()}"
 
         return response + f" [slot {slot}]"
 
@@ -247,11 +245,17 @@ class DeltaAgent:
         self.mood_history.append({"timestamp": ts, "mood": mood_value})
         self.save_state()
 
+
 # ============================================================== #
 # STREAMLIT UI
 # ============================================================== #
 st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
-st.title("Δ-Zero Chat – Adaptive AI 🤖")
+st.title("Δ-Zero Chat – Adaptive AI")
+
+# --- Display logo ---
+if os.path.exists(LOGO_FILE):
+    st.image(LOGO_FILE, width=120)
+
 st.markdown("<sub>by JCB – contextual and evolving</sub>", unsafe_allow_html=True)
 
 # Initialize agent
@@ -272,7 +276,7 @@ if agent.mood_history:
     fig = px.line(df_mood, x="timestamp", y="mood", title="Mood Over Time", markers=True)
     st.sidebar.plotly_chart(fig, width="stretch")
 
-st.sidebar.info(f"Total chats: {len(agent.memory)}")  # full count
+st.sidebar.info(f"Total chats: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Knowledge base: {len(agent.knowledge)} entries")
 
@@ -315,9 +319,8 @@ render_chat()
 if user_input := st.chat_input("Talk to Δ-Zero..."):
     with st.spinner("Δ-Zero is thinking..."):
         lines = [line.strip() for line in user_input.split("\n") if line.strip()]
-        # Add lines as knowledge quickly
-        for i in range(0, len(lines), random.randint(1, 2)):
-            chunk = "\n".join(lines[i:i+random.randint(1,2)])
+        for i in range(0, len(lines), random.randint(1, 3)):
+            chunk = "\n".join(lines[i:i+random.randint(1,3)])
             agent.add_fact(chunk)
         response, slot = agent.respond(user_input, mood)
     
@@ -331,15 +334,13 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
 # ============================================================== #
 # Δ-Zero AI-to-AI Bootstrapping – Run once or periodically
 # ============================================================== #
-def bootstrap_ai(agent, n_rounds=5):
-    if "bootstrapped" not in st.session_state:
-        st.session_state.bootstrapped = True
-    else:
+def bootstrap_ai(agent, n_rounds=3):  # small for speed
+    if "bootstrapped" in st.session_state:
         return  # Already bootstrapped this session
+    st.session_state.bootstrapped = True
 
-    st.info("Initialising Δ-Zero bootstrapping...")
+    st.info("Initialising Δ-Zero...")
 
-    # Step 1: Gather movie facts
     movie_facts = agent.knowledge.copy() if agent.knowledge else [
         "Star Wars is a space opera franchise.",
         "Inception was directed by Christopher Nolan.",
@@ -348,20 +349,18 @@ def bootstrap_ai(agent, n_rounds=5):
         "The Godfather is a classic crime movie."
     ]
 
-    # Step 2: Social lures
     social_lures = [
         "have you seen it?", "what do you think?", "isn't it amazing?", 
         "right?", "don’t you think?", "it blew my mind!"
     ]
 
-    # Step 3: Generate AI-to-AI conversations quickly
-    for i in range(n_rounds):
+    for _ in range(n_rounds):
         user_input = random.choice(movie_facts + social_lures)
         response, slot = agent.respond(user_input)
         agent.log_interaction(user_input, response, slot)
         agent.add_fact(user_input)
 
     agent.save_state()
-    st.success(f"Δ-Zero ready... start chatting and help me learn!")
+    st.success("Welcome! Give me feedback to help me learn!")
 
-bootstrap_ai(agent, n_rounds=5)
+bootstrap_ai(agent, n_rounds=3)
