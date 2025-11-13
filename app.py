@@ -308,11 +308,6 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
     st.rerun()
 
 # Optional: review learned facts
-if st.sidebar.button("Show Learned Facts"):
-    learned_path = os.path.join(KNOWLEDGE_DIR, "learned_facts.txt")
-    if os.path.exists(learned_path):
-        with open(learned_path, "r", encoding="utf-8") as f:
-            st.sidebar.text_area("Learned Knowledge", f.read(), height=250)
-    else:
-        st.sidebar.info("No learned facts yet.")
+
+
 
