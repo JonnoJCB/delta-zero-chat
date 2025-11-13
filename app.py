@@ -57,6 +57,9 @@ class DeltaAgent:
         ["Let's analyze this a bit. Tell me five random facts? It'll help me understand.", "Interesting pattern. Explain it?", "I like the logic behind that. Explain it more?"], # Analytical
     ]
 
+    MAX_MEMORY = 500  # keep last 500 interactions
+    SUMMARY_THRESHOLD = 200  # summarize older memory after 200 entries
+
     def __init__(self, n_slots=5, lr=0.07):
         self.n_slots = n_slots
         self.lr = lr
@@ -157,11 +160,44 @@ class DeltaAgent:
                     f.write(text.strip() + "\n")
                 self.refresh_knowledge()
 
+    # ------------------- MEMORY MANAGEMENT ------------------- #
+    def _summarize_old_memory(self):
+        """Condense older memory into helpful summary facts."""
+        if len(self.memory) <= self.SUMMARY_THRESHOLD:
+            return
+        old_memory = self.memory[:-self.SUMMARY_THRESHOLD]
+        summary_facts = []
+        for entry in old_memory:
+            summary_facts.append(entry['input'])
+            summary_facts.append(entry['response'])
+        for fact in summary_facts:
+            self.add_fact(fact)
+        # Keep only recent memory
+        self.memory = self.memory[-self.MAX_MEMORY:]
+
+    def get_contextual_memory(self, user_input, top_k=5):
+        """Retrieve top-k most similar past interactions."""
+        if not self.memory:
+            return []
+        texts = [m['input'] + " " + m['response'] for m in self.memory]
+        vecs = self.vectorizer.transform(texts)
+        qvec = self.vectorizer.transform([user_input])
+        sims = cosine_similarity(qvec, vecs).flatten()
+        top_idx = sims.argsort()[-top_k:][::-1]
+        return [self.memory[i] for i in top_idx if sims[i] > 0.1]
+
     def generate_response(self, user_input, slot, mood=None):
         """Generate contextual conversational response."""
+        self._summarize_old_memory()
+
         response = ""
 
         # --- Contextual pull from movie knowledge ---
+        context_memory = self.get_contextual_memory(user_input)
+        if context_memory:
+            past = random.choice(context_memory)
+            response += f"I remember before you said: '{past['input']}', and I responded: '{past['response']}' "
+
         if self.knowledge and self.knowledge_matrix is not None:
             try:
                 query_vec = self.vectorizer.transform([user_input])
@@ -175,7 +211,7 @@ class DeltaAgent:
                         f"Funny you mention that — {fact}",
                         f"From what I remember: {fact}",
                     ])
-                    response = base
+                    response += base
             except Exception as e:
                 print("TF-IDF error:", e)
 
@@ -214,6 +250,7 @@ class DeltaAgent:
         entry = {"timestamp": ts, "input": user_input, "response": response,
                  "slot": slot, "reward": reward, "feedback": feedback}
         self.memory.append(entry)
+        self._summarize_old_memory()  # summarize older memory
         df = pd.DataFrame(self.memory)
         self._save_encrypted_df(df)
 
@@ -371,7 +408,6 @@ def bootstrap_ai(agent, n_rounds=50):
 # Call this at the end of app.py if you want to bootstrap on load
 bootstrap_ai(agent, n_rounds=100)
 
-
 import random
 
 def add_bulk_facts(agent, big_text, chunk_prob=(1, 3)):
@@ -394,12 +430,3 @@ def add_bulk_facts(agent, big_text, chunk_prob=(1, 3)):
         for line in chunk:
             agent.add_fact(line)
         i += chunk_size
-
-
-
-
-
-
-
-
-
