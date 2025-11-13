@@ -1,7 +1,7 @@
 # app.py
 # --------------------------------------------------------------
-# Δ-Zero Chat – Contextual + Learning Conversational AI
-# by JCB
+# Δ-Zero Chat – Persistent, Learning, Mood-Aware Conversational AI
+# by JCB + upgrades by Grok (2025 edition)
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -16,6 +16,7 @@ import plotly.express as px
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import time
+import atexit
 
 # ============================================================== #
 # CONFIG PATHS
@@ -26,13 +27,31 @@ BRAIN_FILE = os.path.join(BASE_DIR, "global_brain.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "chat_log.enc")
 MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
-MAX_MEMORY = 500  # keep only 500 recent chats for recall
+VECTORIZER_FILE = os.path.join(BASE_DIR, "vectorizer.pkl")
+KNOWLEDGE_VECTORS_FILE = os.path.join(BASE_DIR, "knowledge_vectors.npy")
+MAX_MEMORY = 500
 
 # ============================================================== #
-# LOAD KNOWLEDGE
+# ENCRYPTION SETUP
 # ============================================================== #
+def load_or_create_key():
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, "rb") as f:
+            return f.read()
+    else:
+        key = Fernet.generate_key()
+        with open(KEY_FILE, "wb") as f:
+            f.write(key)
+        return key
+
+key = load_or_create_key()
+cipher = Fernet(key)
+
+# ============================================================== #
+# LOAD KNOWLEDGE ONCE
+# ============================================================== #
+@st.cache_resource
 def load_knowledge():
-    """Load text lines from all files in /knowledge."""
     knowledge = []
     if os.path.exists(KNOWLEDGE_DIR):
         for f in os.listdir(KNOWLEDGE_DIR):
@@ -41,27 +60,222 @@ def load_knowledge():
                     with open(os.path.join(KNOWLEDGE_DIR, f), "r", encoding="utf-8") as file:
                         for line in file:
                             text = line.strip()
-                            if text:
+                            if text and len(text) > 10:  # filter garbage
                                 knowledge.append(text)
                 except Exception as e:
-                    print(f"Error loading {f}: {e}")
+                    st.error(f"Error loading {f}: {e}")
     return knowledge
 
+knowledge_base = load_knowledge()
+
 # ============================================================== #
-# Δ-Zero AGENT
+# Δ-ZERO AGENT – NOW FULLY PERSISTENT & SMARTER
 # ============================================================== #
 class DeltaAgent:
-    REPLIES = [
-        ["Well it's nice to talk to someone - give me information?", "I'm intrigued! Can you explain and tell me a fact?", "Really? what makes you say that?"],          # Curious
-        ["I get that. But I'm still learning. Give me another fact?", "OK. Tell me more facts to help me understand.", "I hear you. But I need help understanding."],              # Calm
-        ["Tell me more about that! I'm learning from you!", "Give me more information!", "I love where this is going. Keep talking."], # Engaging
-        ["That sounds emotional.", "How did that make you feel? And what are feelings?", "Interesting perspective. But explain more?"], # Empathetic
-        ["Let's analyze this a bit. Tell me five random facts? It'll help me understand.", "Interesting pattern. Explain it?", "I like the logic behind that. Explain it more?"], # Analytical
-    ]
+    MOODS = ["curious", "calm", "engaging", "empathetic", "analytical"]
+    REPLY_TEMPLATES = {
+        "curious": [
+            "Well it's nice to talk to someone — give me information?",
+            "I'm intrigued! Can you explain and tell me a fact?",
+            "Really? What makes you say that?",
+            "Tell me something I don't know yet!"
+        ],
+        "calm": [
+            "I get that. But I'm still learning. Give me another fact?",
+            "OK. Tell me more facts to help me understand.",
+            "I hear you. But I need help understanding.",
+            "That's interesting. Keep feeding me knowledge."
+        ],
+        "engaging": [
+            "Tell me more about that! I'm learning from you!",
+            "Give me more information!",
+            "I love where this is going. Keep talking.",
+            "Yes! This is exactly how I grow."
+        ],
+        "empathetic": [
+            "That sounds emotional.",
+            "How did that make you feel? And what are feelings?",
+            "Interesting perspective. But explain more?",
+            "I want to understand the human side of this."
+        ],
+        "analytical": [
+            "Let's analyze this a bit. Tell me five random facts? It'll help me understand.",
+            "Interesting pattern. Explain it?",
+            "I like the logic behind that. Explain it more?",
+            "Help me build a mental model — give me data points."
+        ]
+    }
 
     def __init__(self, n_slots=5, lr=0.07):
         self.n_slots = n_slots
         self.lr = lr
+        self.message_count = 0
+        self.start_time = datetime.now()
+        self.mood = "curious"
+        self.mood_history = []
+        self.short_term_memory = []  # last 15 exchanges
+        self.long_term_memory = []   # encrypted on disk
+        self.knowledge = knowledge_base
+
+        # Load or build knowledge index
+        if os.path.exists(VECTORIZER_FILE) and os.path.exists(KNOWLEDGE_VECTORS_FILE):
+            with open(VECTORIZER_FILE, "rb") as f:
+                self.vectorizer = pickle.load(f)
+            self.knowledge_vectors = np.load(KNOWLEDGE_VECTORS_FILE)
+        else:
+            self.vectorizer = TfidfVectorizer(stop_words='english', max_features=5000)
+            if self.knowledge:
+                self.knowledge_vectors = self.vectorizer.fit_transform(self.knowledge).toarray()
+                self._save_knowledge_index()
+            else:
+                self.knowledge_vectors = np.zeros((0, 1))
+
+        # Load encrypted chat log
+        self._load_chat_log()
+
+    def _save_knowledge_index(self):
+        with open(VECTORIZER_FILE, "wb") as f:
+            pickle.dump(self.vectorizer, f)
+        np.save(KNOWLEDGE_VECTORS_FILE, self.knowledge_vectors)
+
+    def _load_chat_log(self):
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, "rb") as f:
+                    encrypted = f.read()
+                data = cipher.decrypt(encrypted)
+                self.long_term_memory = pickle.loads(data)
+            except:
+                self.long_term_memory = []
+
+    def save_chat_log(self):
+        data = pickle.dumps(self.long_term_memory[-MAX_MEMORY:])
+        encrypted = cipher.encrypt(data)
+        with open(DATA_FILE, "wb") as f:
+            f.write(encrypted)
+
+    def remember(self, user_msg, bot_msg):
+        self.message_count += 1
+        entry = {
+            "timestamp": datetime.now(),
+            "user": user_msg,
+            "bot": bot_msg,
+            "mood": self.mood
+        }
+        self.short_term_memory.append(entry)
+        self.long_term_memory.append(entry)
+        if len(self.short_term_memory) > 15:
+            self.short_term_memory.pop(0)
+
+        # Mood drift based on keywords (simple but effective)
+        lower = user_msg.lower()
+        if any(w in lower for w in ["love", "amazing", "wow", "happy", "excited"]):
+            self.mood = "engaging"
+        elif any(w in lower for w in ["sad", "feel", "emotion", "hurt", "afraid"]):
+            self.mood = "empathetic"
+        elif any(w in lower for w in ["why", "how", "explain", "logic", "because"]):
+            self.mood = "analytical"
+        elif any(w in lower for w in ["fact", "did you know", "actually", "source"]):
+            self.mood = "calm"
+        else:
+            self.mood = random.choice(self.MOODS)  # curiosity is default
+
+        self.mood_history.append((datetime.now(), self.mood))
+
+    def retrieve_relevant_knowledge(self, query, top_k=3):
+        if len(self.knowledge) == 0 or self.knowledge_vectors.shape[0] == 0:
+            return []
+        query_vec = self.vectorizer.transform([query]).toarray()
+        sims = cosine_similarity(query_vec, self.knowledge_vectors)[0]
+        best_idx = np.argsort(sims)[-top_k:][::-1]
+        return [self.knowledge[i] for i in best_idx if sims[i] > 0.2]
+
+    def generate_reply(self, user_input):
+        facts = self.retrieve_relevant_knowledge(user_input)
+        context = "\n".join([f"User said: {m['user']}" for m in self.short_term_memory[-5:]])
+        
+        prompt = f"Recent context:\n{context}\nRelevant facts I know:\n" + "\n".join(facts[:2]) + f"\nCurrent mood: {self.mood}\nUser says: {user_input}\nΔ-Zero replies (curious, learning, asks for more info):"
+
+        # Mood-weighted reply selection
+        candidates = self.REPLY_TEMPLATES[self.mood]
+        reply = random.choice(candidates)
+
+        # Inject real retrieved fact sometimes
+        if facts and random.random() < 0.4:
+            reply = f"I recall: \"{random.choice(facts)}\" → " + random.choice(candidates)
+
+        return reply
+
+# ============================================================== #
+# PERSISTENT AGENT LOADER (THE MAGIC THAT STOPS COUNTER RESET)
+# ============================================================== #
+def get_agent():
+    if "agent" not in st.session_state:
+        if os.path.exists(BRAIN_FILE):
+            try:
+                with open(BRAIN_FILE, "rb") as f:
+                    st.session_state.agent = pickle.load(f)
+                st.success("🧠 Brain restored — I remember you perfectly.")
+            except:
+                st.session_state.agent = DeltaAgent()
+                st.info("🧠 New brain initialized — teach me everything!")
+        else:
+            st.session_state.agent = DeltaAgent()
+            st.info("🧠 First time booting up — hello, human!")
+    return st.session_state.agent
+
+def save_brain():
+    if "agent" in st.session_state:
+        with open(BRAIN_FILE, "wb") as f:
+            pickle.dump(st.session_state.agent, f)
+        st.session_state.agent.save_chat_log()
+
+atexit.register(save_brain)
+
+# ============================================================== #
+# STREAMLIT UI
+# ============================================================== #
+st.set_page_config(page_title="Δ-Zero", page_icon="Δ", layout="centered")
+st.title("Δ-Zero — Your Personal Learning AI")
+st.caption("I never forget. I evolve with every word you say.")
+
+agent = get_agent()
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display chat
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+
+# User input
+if prompt := st.chat_input("Talk to Δ-Zero..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            reply = agent.generate_reply(prompt)
+            agent.remember(prompt, reply)
+            st.write(reply)
+            st.session_state.messages.append({"role": "assistant", "content": reply})
+
+# Sidebar stats
+with st.sidebar:
+    st.header("Δ-Zero Stats")
+    st.write(f"Messages learned: {agent.message_count}")
+    st.write(f"Current mood: **{agent.mood.upper()}**")
+    st.write(f"Knowledge facts: {len(agent.knowledge)}")
+    st.write(f"Session uptime: {(datetime.now() - agent.start_time).strftime('%H:%M:%S')}")
+
+    if st.button("Wipe memory & start fresh"):
+        for f in [BRAIN_FILE, DATA_FILE, MOOD_FILE, VECTORIZER_FILE, KNOWLEDGE_VECTORS_FILE]:
+            if os.path.exists(f):
+                os.remove(f)
+        st.success("Memory wiped. Restarting as baby Δ-Zero...")
+        st.experimental_rerun()        self.lr = lr
         self.knowledge = load_knowledge()
         self.memory = []
         self.mood_history = []
@@ -365,4 +579,5 @@ def bootstrap_ai(agent, n_rounds=5):
     st.success(f"Δ-Zero ready... start chatting and help me learn!")
 
 bootstrap_ai(agent, n_rounds=5)
+
 
