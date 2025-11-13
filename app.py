@@ -26,6 +26,7 @@ BRAIN_FILE = os.path.join(BASE_DIR, "global_brain.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "chat_log.enc")
 MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
+MAX_MEMORY = 500  # keep only 500 recent chats for recall
 
 # ============================================================== #
 # LOAD KNOWLEDGE
@@ -58,8 +59,6 @@ class DeltaAgent:
         ["Let's analyze this a bit. Tell me five random facts? It'll help me understand.", "Interesting pattern. Explain it?", "I like the logic behind that. Explain it more?"], # Analytical
     ]
 
-    MAX_MEMORY = 500  # Keep only last 500 interactions
-
     def __init__(self, n_slots=5, lr=0.07):
         self.n_slots = n_slots
         self.lr = lr
@@ -77,7 +76,6 @@ class DeltaAgent:
         self.mood_history = self._load_mood()
 
         # Setup TF-IDF vectorizer for contextual knowledge
-        self.vectorizer = TfidfVectorizer(stop_words="english")
         self._refresh_vectorizer()
 
     # ------------------- ENCRYPTION / FILE HANDLING ------------------- #
@@ -106,9 +104,7 @@ class DeltaAgent:
                     return []
                 dec = self.cipher.decrypt(enc)
                 df = pd.read_csv(pd.io.common.StringIO(dec.decode()))
-                mem = df.to_dict("records")
-                # Keep only last MAX_MEMORY interactions
-                return mem[-self.MAX_MEMORY:]
+                return df.to_dict("records")
         except Exception:
             return []
 
@@ -141,11 +137,12 @@ class DeltaAgent:
         return slot
 
     def _refresh_vectorizer(self):
-        """Vectorize both knowledge and memory for context retrieval."""
+        """Vectorize knowledge + last MAX_MEMORY interactions for context."""
+        recent_memory = self.memory[-MAX_MEMORY:]  # only last 500
         valid_memory_texts = [
-            str(m['input']) + " " + str(m['response'])
-            for m in self.memory
-            if isinstance(m, dict) and 'input' in m and 'response' in m
+            str(m.get('input', '')) + " " + str(m.get('response', ''))
+            for m in recent_memory
+            if isinstance(m, dict)
         ]
         texts = self.knowledge + valid_memory_texts
         if texts:
@@ -175,7 +172,7 @@ class DeltaAgent:
         """Generate contextual conversational response."""
         response = ""
 
-        # --- Contextual pull from knowledge ---
+        # --- Contextual pull from memory/knowledge ---
         if self.knowledge and self.knowledge_matrix is not None:
             try:
                 query_vec = self.vectorizer.transform([user_input])
@@ -186,8 +183,8 @@ class DeltaAgent:
                     base = random.choice([
                         f"I think: {fact}",
                         f"I think: {fact}",
-                        f"Funny you mention that — I think {fact}",
-                        f"From what I know: I think {fact}",
+                        f"Funny you mention that — {fact}",
+                        f"From what I think: {fact}",
                     ])
                     response = base
             except Exception as e:
@@ -205,7 +202,7 @@ class DeltaAgent:
         if random.random() < 0.5:
             response += " " + random.choice(softeners)
 
-        # --- Chance to drop extra knowledge ---
+        # --- Chance to drop a knowledge fun fact ---
         if self.knowledge and random.random() < 0.25:
             extra = random.choice(self.knowledge)
             response += f" By the way, {extra.lower()}"
@@ -228,14 +225,14 @@ class DeltaAgent:
         entry = {"timestamp": ts, "input": user_input, "response": response,
                  "slot": slot, "reward": reward, "feedback": feedback}
         self.memory.append(entry)
-        # Keep only last MAX_MEMORY
-        self.memory = self.memory[-self.MAX_MEMORY:]
         df = pd.DataFrame(self.memory)
         self._save_encrypted_df(df)
 
-        # Learn from factual-looking statements
+        # Try to learn from factual-looking statements
         if any(word in user_input.lower() for word in ["was", "were", "is", "are", "released", "directed", "stars"]):
             self.add_fact(user_input)
+
+        self._refresh_vectorizer()
 
     def save_state(self):
         with open(BRAIN_FILE, "wb") as f:
@@ -247,7 +244,6 @@ class DeltaAgent:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.mood_history.append({"timestamp": ts, "mood": mood_value})
         self.save_state()
-
 
 # ============================================================== #
 # STREAMLIT UI
@@ -274,7 +270,7 @@ if agent.mood_history:
     fig = px.line(df_mood, x="timestamp", y="mood", title="Mood Over Time", markers=True)
     st.sidebar.plotly_chart(fig, width="stretch")
 
-st.sidebar.info(f"Total chats: {len(agent.memory)}")
+st.sidebar.info(f"Total chats: {len(agent.memory)}")  # full count
 if agent.knowledge:
     st.sidebar.success(f"Knowledge base: {len(agent.knowledge)} entries")
 
@@ -338,10 +334,6 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
 # Δ-Zero AI-to-AI Bootstrapping – Run once or periodically
 # ============================================================== #
 def bootstrap_ai(agent, n_rounds=50):
-    """
-    Seed the agent with AI-to-AI conversations to jumpstart knowledge.
-    n_rounds: how many simulated user-bot exchanges to run
-    """
     if "bootstrapped" not in st.session_state:
         st.session_state.bootstrapped = True
     else:
@@ -352,7 +344,6 @@ def bootstrap_ai(agent, n_rounds=50):
     # Step 1: Gather movie facts
     movie_facts = agent.knowledge.copy() if agent.knowledge else []
     if not movie_facts:
-        # fallback: some generic movie facts
         movie_facts = [
             "Star Wars is a space opera franchise.",
             "Inception was directed by Christopher Nolan.",
@@ -361,7 +352,7 @@ def bootstrap_ai(agent, n_rounds=50):
             "The Godfather is a classic crime movie."
         ]
 
-    # Step 2: Social lures for natural conversation
+    # Step 2: Social lures
     social_lures = [
         "have you seen it?", "what do you think?", "isn't it amazing?", 
         "right?", "don’t you think?", "it blew my mind!"
@@ -369,19 +360,13 @@ def bootstrap_ai(agent, n_rounds=50):
 
     # Step 3: Generate AI-to-AI conversations
     for i in range(n_rounds):
-        # Randomly pick a user-style input
         user_input = random.choice(movie_facts + social_lures)
-        # Agent responds
         response, slot = agent.respond(user_input)
-        # Log the interaction
         agent.log_interaction(user_input, response, slot)
-        # Add facts back to knowledge
         agent.add_fact(user_input)
-        # Optional: short delay to simulate pacing
-        time.sleep(0.05)
+        time.sleep(0.01)
 
     agent.save_state()
     st.success(f"Welcome... give me feedback to help me learn!")
 
-# Call bootstrap on load
 bootstrap_ai(agent, n_rounds=100)
