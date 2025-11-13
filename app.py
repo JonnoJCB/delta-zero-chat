@@ -182,7 +182,6 @@ class DeltaAgent:
                     fact = self.knowledge[best_idx]
                     base = random.choice([
                         f"I think: {fact}",
-                        f"I think: {fact}",
                         f"Funny you mention that — {fact}",
                         f"From what I think: {fact}",
                     ])
@@ -258,31 +257,40 @@ if "agent" not in st.session_state:
         st.session_state.agent = DeltaAgent()
 agent = st.session_state.agent
 
-# Sidebar – Mood
+# ---------------- Sidebar – Mood Tracker ---------------- #
 st.sidebar.header("Mood Tracker")
-mood = st.sidebar.slider("Your current mood", 0.0, 10.0, 5.0, 0.5)
+
+# Persistent mood
+if "mood_value" not in st.session_state:
+    st.session_state.mood_value = 5.0
+
+st.session_state.mood_value = st.sidebar.slider(
+    "Your current mood", 0.0, 10.0, st.session_state.mood_value, 0.5
+)
+
 if st.sidebar.button("Record Mood"):
-    agent.update_mood(mood)
+    agent.update_mood(st.session_state.mood_value)
     st.sidebar.success("Mood recorded!")
 
+# Mood history plot
 if agent.mood_history:
     df_mood = pd.DataFrame(agent.mood_history)
     fig = px.line(df_mood, x="timestamp", y="mood", title="Mood Over Time", markers=True)
     st.sidebar.plotly_chart(fig, width="stretch")
 
-st.sidebar.info(f"Total chats: {len(agent.memory)}")  # full count
+st.sidebar.info(f"Total chats: {len(agent.memory)}")
 if agent.knowledge:
     st.sidebar.success(f"Knowledge base: {len(agent.knowledge)} entries")
 
-# Personality / Confidence Bar
+# ---------------- Personality Bar (dynamic with mood) ---------------- #
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
-weights = (agent.w / agent.w.sum()).round(3)
+weights = agent._apply_mood_boost(st.session_state.mood_value).round(3)
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
-conf_fig = px.bar(conf_df, x="Style", y="Confidence", color="Confidence", title="AI Personality",
-                  color_continuous_scale="Blues", height=250)
+conf_fig = px.bar(conf_df, x="Style", y="Confidence", color="Confidence",
+                  title="AI Personality", color_continuous_scale="Blues", height=250)
 st.plotly_chart(conf_fig, width="stretch")
 
-# Chat state
+# ---------------- Chat State ---------------- #
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
@@ -309,7 +317,7 @@ def render_chat():
 
 render_chat()
 
-# Chat input
+# ---------------- Chat Input ---------------- #
 if user_input := st.chat_input("Talk to Δ-Zero..."):
     with st.spinner("Δ-Zero is thinking..."):
         # --- Check for multi-line input ---
@@ -320,8 +328,8 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
             chunk = "\n".join(lines[i:i+random.randint(1,3)])
             agent.add_fact(chunk)
         
-        # Respond to the full input as usual
-        response, slot = agent.respond(user_input, mood)
+        # Respond to the full input using current mood
+        response, slot = agent.respond(user_input, mood=st.session_state.mood_value)
     
     agent.log_interaction(user_input, response, slot)
     agent.save_state()
@@ -330,10 +338,8 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
     st.rerun()
 
-# ============================================================== #
-# Δ-Zero AI-to-AI Bootstrapping – Run once or periodically
-# ============================================================== #
-def bootstrap_ai(agent, n_rounds=11):
+# ---------------- Δ-Zero AI-to-AI Bootstrapping ---------------- #
+def bootstrap_ai(agent, n_rounds=1):
     if "bootstrapped" not in st.session_state:
         st.session_state.bootstrapped = True
     else:
@@ -341,36 +347,24 @@ def bootstrap_ai(agent, n_rounds=11):
 
     st.info("Initialising Δ-Zero...")
 
-    # Step 1: Gather movie facts
-    movie_facts = agent.knowledge.copy() if agent.knowledge else []
-    if not movie_facts:
-        movie_facts = [
-            "Star Wars is a space opera franchise.",
-            "Inception was directed by Christopher Nolan.",
-            "The Matrix features groundbreaking visuals.",
-            "Interstellar explores space and time.",
-            "The Godfather is a classic crime movie."
-        ]
-
-    # Step 2: Social lures
-    social_lures = [
-        "have you seen it?", "what do you think?", "isn't it amazing?", 
-        "right?", "don’t you think?", "it blew my mind!"
+    movie_facts = agent.knowledge.copy() if agent.knowledge else [
+        "Star Wars is a space opera franchise.",
+        "Inception was directed by Christopher Nolan.",
+        "The Matrix features groundbreaking visuals.",
+        "Interstellar explores space and time.",
+        "The Godfather is a classic crime movie."
     ]
 
-    # Step 3: Generate AI-to-AI conversations
-    for i in range(n_rounds):
+    social_lures = ["have you seen it?", "what do you think?", "isn't it amazing?", "right?", "don’t you think?", "it blew my mind!"]
+
+    for _ in range(n_rounds):
         user_input = random.choice(movie_facts + social_lures)
-        response, slot = agent.respond(user_input)
+        response, slot = agent.respond(user_input, mood=5.0)
         agent.log_interaction(user_input, response, slot)
         agent.add_fact(user_input)
         time.sleep(0.01)
 
     agent.save_state()
-    st.success(f"Welcome... give me feedback to help me learn!")
+    st.success("Welcome! Give feedback to help me learn.")
 
-bootstrap_ai(agent, n_rounds=100)
-
-
-
-
+bootstrap_ai(agent, n_rounds=1)  # Only run once on session start
