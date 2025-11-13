@@ -180,12 +180,13 @@ class DeltaAgent:
                 best_idx = sims.argmax()
                 if sims[best_idx] > 0.15:
                     fact = self.knowledge[best_idx]
-                    base = random.choice([
-                        f"I think: {fact}",
-                        f"Funny you mention that — {fact}",
-                        f"From what I think: {fact}",
+                    # Avoid duplicate fact in response
+                    response = random.choice([
+                        f"Did you know? {fact}",
+                        f"Here's something interesting: {fact}",
+                        f"Fun fact: {fact}",
+                        f"{fact}"
                     ])
-                    response = base
             except Exception as e:
                 print("TF-IDF error:", e)
 
@@ -202,9 +203,11 @@ class DeltaAgent:
             response += " " + random.choice(softeners)
 
         # --- Chance to drop a knowledge fun fact ---
-        if self.knowledge and random.random() < 0.25:
+        if self.knowledge and random.random() < 0.4:
             extra = random.choice(self.knowledge)
-            response += f" By the way, {extra.lower()}"
+            # Avoid repeating the same fact in one response
+            if extra not in response:
+                response += f" By the way, {extra.lower()}"
 
         return response + f" [slot {slot}]"
 
@@ -257,40 +260,31 @@ if "agent" not in st.session_state:
         st.session_state.agent = DeltaAgent()
 agent = st.session_state.agent
 
-# ---------------- Sidebar – Mood Tracker ---------------- #
+# Sidebar – Mood
 st.sidebar.header("Mood Tracker")
-
-# Persistent mood
-if "mood_value" not in st.session_state:
-    st.session_state.mood_value = 5.0
-
-st.session_state.mood_value = st.sidebar.slider(
-    "Your current mood", 0.0, 10.0, st.session_state.mood_value, 0.5
-)
-
+mood = st.sidebar.slider("Your current mood", 0.0, 10.0, 5.0, 0.5)
 if st.sidebar.button("Record Mood"):
-    agent.update_mood(st.session_state.mood_value)
+    agent.update_mood(mood)
     st.sidebar.success("Mood recorded!")
 
-# Mood history plot
 if agent.mood_history:
     df_mood = pd.DataFrame(agent.mood_history)
     fig = px.line(df_mood, x="timestamp", y="mood", title="Mood Over Time", markers=True)
     st.sidebar.plotly_chart(fig, width="stretch")
 
-st.sidebar.info(f"Total chats: {len(agent.memory)}")
+st.sidebar.info(f"Total chats: {len(agent.memory)}")  # full count
 if agent.knowledge:
     st.sidebar.success(f"Knowledge base: {len(agent.knowledge)} entries")
 
-# ---------------- Personality Bar (dynamic with mood) ---------------- #
+# Personality / Confidence Bar
 slot_labels = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
-weights = agent._apply_mood_boost(st.session_state.mood_value).round(3)
+weights = (agent.w / agent.w.sum()).round(3)
 conf_df = pd.DataFrame({"Style": slot_labels, "Confidence": weights})
-conf_fig = px.bar(conf_df, x="Style", y="Confidence", color="Confidence",
-                  title="AI Personality", color_continuous_scale="Blues", height=250)
+conf_fig = px.bar(conf_df, x="Style", y="Confidence", color="Confidence", title="AI Personality",
+                  color_continuous_scale="Blues", height=250)
 st.plotly_chart(conf_fig, width="stretch")
 
-# ---------------- Chat State ---------------- #
+# Chat state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_bot_idx" not in st.session_state:
@@ -317,19 +311,15 @@ def render_chat():
 
 render_chat()
 
-# ---------------- Chat Input ---------------- #
+# Chat input
 if user_input := st.chat_input("Talk to Δ-Zero..."):
     with st.spinner("Δ-Zero is thinking..."):
-        # --- Check for multi-line input ---
         lines = [line.strip() for line in user_input.split("\n") if line.strip()]
-        
-        # Randomly take 1-3 lines to add as knowledge
-        for i in range(0, len(lines), random.randint(1, 3)):
-            chunk = "\n".join(lines[i:i+random.randint(1,3)])
+        # Add lines as knowledge quickly
+        for i in range(0, len(lines), random.randint(1, 2)):
+            chunk = "\n".join(lines[i:i+random.randint(1,2)])
             agent.add_fact(chunk)
-        
-        # Respond to the full input using current mood
-        response, slot = agent.respond(user_input, mood=st.session_state.mood_value)
+        response, slot = agent.respond(user_input, mood)
     
     agent.log_interaction(user_input, response, slot)
     agent.save_state()
@@ -338,15 +328,18 @@ if user_input := st.chat_input("Talk to Δ-Zero..."):
     st.session_state.last_bot_idx = len(st.session_state.chat_history) - 1
     st.rerun()
 
-# ---------------- Δ-Zero AI-to-AI Bootstrapping ---------------- #
-def bootstrap_ai(agent, n_rounds=1):
+# ============================================================== #
+# Δ-Zero AI-to-AI Bootstrapping – Run once or periodically
+# ============================================================== #
+def bootstrap_ai(agent, n_rounds=5):
     if "bootstrapped" not in st.session_state:
         st.session_state.bootstrapped = True
     else:
         return  # Already bootstrapped this session
 
-    st.info("Initialising Δ-Zero...")
+    st.info("Initialising Δ-Zero bootstrapping...")
 
+    # Step 1: Gather movie facts
     movie_facts = agent.knowledge.copy() if agent.knowledge else [
         "Star Wars is a space opera franchise.",
         "Inception was directed by Christopher Nolan.",
@@ -355,16 +348,20 @@ def bootstrap_ai(agent, n_rounds=1):
         "The Godfather is a classic crime movie."
     ]
 
-    social_lures = ["have you seen it?", "what do you think?", "isn't it amazing?", "right?", "don’t you think?", "it blew my mind!"]
+    # Step 2: Social lures
+    social_lures = [
+        "have you seen it?", "what do you think?", "isn't it amazing?", 
+        "right?", "don’t you think?", "it blew my mind!"
+    ]
 
-    for _ in range(n_rounds):
+    # Step 3: Generate AI-to-AI conversations quickly
+    for i in range(n_rounds):
         user_input = random.choice(movie_facts + social_lures)
-        response, slot = agent.respond(user_input, mood=5.0)
+        response, slot = agent.respond(user_input)
         agent.log_interaction(user_input, response, slot)
         agent.add_fact(user_input)
-        time.sleep(0.01)
 
     agent.save_state()
-    st.success("Welcome! Give feedback to help me learn.")
+    st.success(f"Δ-Zero ready... start chatting and help me learn!")
 
-bootstrap_ai(agent, n_rounds=1)  # Only run once on session start
+bootstrap_ai(agent, n_rounds=5)
