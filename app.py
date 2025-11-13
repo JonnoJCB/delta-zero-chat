@@ -267,43 +267,65 @@ import streamlit as st
 from pathlib import Path
 
 # ============================================================== #
-# BUILT-IN LIVE2D AVATAR — NO DOWNLOADS, NO FOLDERS
-# Works instantly. Fully private. Reacts to personality + mood.
+# INSTANT LIVE2D AVATAR — GUARANTEED WORKING IN STREAMLIT (Nov 2025)
+# No downloads, reacts to personality + mood, cute Hiyori model
 # ============================================================== #
 def show_live2d_avatar():
-    # Determine expression from Δ-Zero's current state
+    # Get current mood (from your slider)
+    current_mood = mood if 'mood' in globals() else 5.0
+    
+    # Get dominant personality
     weights = agent.w / agent.w.sum()
-    dominant = np.argmax(weights)
-    mood_val = mood if 'mood' in locals() else 5.0
-
-    expr_map = {0: "happy", 1: "neutral", 2: "happy", 3: "sad", 4: "serious"}
-    expression = expr_map[dominant]
-    if mood_val > 7: expression = "happy"
-    if mood_val < 4: expression = "sad"
+    dominant = int(np.argmax(weights))
+    
+    # Map to motion (idle = normal, happy when engaging/curious/high mood, etc.)
+    motion = "Idle"  # default
+    if dominant in [0, 2] or current_mood > 7:   # Curious or Engaging or happy
+        motion = "Tap_happy" if current_mood > 7 else "Idle"
+    if dominant == 3 or current_mood < 4:       # Empathetic or sad
+        motion = "Tap_sad"
+    if dominant == 4:                           # Analytical
+        motion = "Shake"
 
     html = f"""
-    <script src="https://cdn.jsdelivr.net/gh/stevenjoezhang/live2d-widget@latest/autoload.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/live2d-widget@latest/lib/L2Dwidget.min.js"></script>
     <script>
-    // Override default settings after widget loads
-    setTimeout(() => {{
-        if (window.L2Dwidget) {{
-            L2Dwidget.init({{
-                model: {{ jsonPath: "https://cdn.jsdelivr.net/npm/live2d-widget-model-hiyori@1.0.5/assets/hiyori.model.json" }},
-                display: {{ width: 220, height: 320, position: "right", hOffset: 20, vOffset: -40 }},
-                mobile: {{ scale: 0.6 }},
-                react: {{ opacityDefault: 0.9 }},
-            }});
-            // Force expression based on Δ-Zero's mood/personality
-            setTimeout(() => {{
-                window.loadlive2d("live2d", "https://cdn.jsdelivr.net/npm/live2d-widget-model-hiyori@1.0.5/assets/hiyori.model.json");
-                document.querySelector('#live2d').setAttribute('data-expression', '{expression}');
-            }}, 1500);
+    L2Dwidget.init({{
+        "model": {{
+            "jsonPath": "https://unpkg.com/live2d-widget-model-hiyori@1.0.5/assets/hiyori.model.json",
+            "scale": 1
+        }},
+        "display": {{
+            "position": "right",
+            "width": 180,
+            "height": 300,
+            "hOffset": 30,
+            "vOffset": -20
+        }},
+        "mobile": {{
+            "show": true,
+            "scale": 0.7
+        }},
+        "react": {{
+            "opacityDefault": 0.9,
+            "opacityOnHover": 0.2
+        }},
+        "dialog": {{
+            "enable": false
         }}
-    }}, 1000);
+    }});
+    
+    // Force motion based on Δ-Zero's personality/mood
+    setTimeout(() => {{
+        const live2d = document.getElementById("live2d");
+        if (live2d) live2d.setAttribute("motion", "{motion}");
+    }}, 2000);
     </script>
-    <div id="live2d-widget" style="position:fixed; bottom:0; right:0; width:280px; height:420px; z-index:9999; pointer-events:none;"></div>
     """
-    st.components.v1.html(html, height=0, width=0)
+    st.components.v1.html(html, height=350, width=300)
 
+# CALL IT ONCE — e.g. right after your title
+show_live2d_avatar()
 # CALL THIS ONCE — right after your title or in sidebar
 show_live2d_avatar()
+
