@@ -436,9 +436,8 @@ def render_chat():
 
 render_chat()
 
-# ---------- Input Handler ----------
-if "user_input" not in st.session_state:
-    st.session_state.user_input = ""
+File "/mount/src/delta-zero-chat/app.py", line 444
+      if st.session_state.user_input
+                                    ^
+SyntaxError: expected ':'
 
-def submit_message():
-    if st.session_state.user_input
