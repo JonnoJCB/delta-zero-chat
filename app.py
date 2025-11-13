@@ -31,7 +31,7 @@ MAX_MEMORY = 300
 # PAGE CONFIG & DARK MODE
 # ============================================================== #
 st.set_page_config(
-    page_title="Δ-Zero Chat",
+    page_title="-Zero Chat",
     page_icon="Δ",
     layout="centered",
     initial_sidebar_state="expanded"
@@ -56,10 +56,6 @@ st.markdown("""
     .subtitle { color: #a0a0ff; font-size: 1.1em; }
 </style>
 """, unsafe_allow_html=True)
-
-# ============================================================== #
-# TITLE (Beautiful with real Δ symbol)
-# ============================================================== #
 col1, col2 = st.columns([1, 4])
 with col1:
     st.markdown("<h1 style='font-size: 4rem; margin: 0;'>Δ</h1>", unsafe_allow_html=True)
@@ -355,3 +351,4 @@ if len(agent.memory) < 3 and len(agent.knowledge) < 10:
     for fact in initial_facts:
         agent.add_fact(fact)
     st.success("Δ-Zero is ready!")
+
