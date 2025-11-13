@@ -2,18 +2,12 @@ streamlit
 numpy
 pandas
 plotly
+sentence-transformers
+transformers
+torch
+torchaudio
 cryptography
-sentence-transformers>=2.2.2
-torch==2.0.1
-torchvision==0.15.2
-transformers==4.21.0
-tqdm
 scikit-learn
-scipy
-nltk
-sentencepiece
-huggingface-hub
 
-
-
-
+# Extra index for PyTorch (MUST be on its own line)
+--extra-index-url https://download.pytorch.org/whl/cpu
