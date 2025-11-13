@@ -362,4 +362,28 @@ def bootstrap_ai(agent, n_rounds=50):
 bootstrap_ai(agent, n_rounds=100)
 
 
+import random
+
+def add_bulk_facts(agent, big_text, chunk_prob=(1, 3)):
+    """
+    Add bulk text to the agent, splitting by lines and randomly taking 1-3 lines at a time.
+
+    Parameters:
+    - agent: your DeltaAgent instance
+    - big_text: large string with multiple lines of facts
+    - chunk_prob: tuple (min_lines, max_lines) to randomly choose how many lines to add at once
+    """
+    # Split text into clean non-empty lines
+    lines = [line.strip() for line in big_text.split("\n") if line.strip()]
+    
+    i = 0
+    while i < len(lines):
+        # Randomly decide how many lines to add this round (1, 2, or 3)
+        chunk_size = random.randint(chunk_prob[0], chunk_prob[1])
+        chunk = lines[i:i+chunk_size]
+        for line in chunk:
+            agent.add_fact(line)
+        i += chunk_size
+
+
 
