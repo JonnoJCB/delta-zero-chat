@@ -299,7 +299,17 @@ render_chat()
 # Chat input
 if user_input := st.chat_input("Talk to Δ-Zero..."):
     with st.spinner("Δ-Zero is thinking..."):
+        # --- Check for multi-line input ---
+        lines = [line.strip() for line in user_input.split("\n") if line.strip()]
+        
+        # Randomly take 1-3 lines to add as knowledge
+        for i in range(0, len(lines), random.randint(1, 3)):
+            chunk = "\n".join(lines[i:i+random.randint(1,3)])
+            agent.add_fact(chunk)
+        
+        # Respond to the full input as usual
         response, slot = agent.respond(user_input, mood)
+    
     agent.log_interaction(user_input, response, slot)
     agent.save_state()
     st.session_state.chat_history.append({"sender": "user", "message": user_input})
@@ -384,6 +394,7 @@ def add_bulk_facts(agent, big_text, chunk_prob=(1, 3)):
         for line in chunk:
             agent.add_fact(line)
         i += chunk_size
+
 
 
 
