@@ -332,7 +332,7 @@ def bootstrap_ai(agent, n_rounds=50):
     else:
         return  # Already bootstrapped this session
 
-    st.info("Bootstrapping Δ-Zero with AI-to-AI conversations...")
+    st.info("Initialising Delta-Zero...")
 
     # Step 1: Gather movie facts
     movie_facts = agent.knowledge.copy() if agent.knowledge else []
@@ -394,6 +394,7 @@ def add_bulk_facts(agent, big_text, chunk_prob=(1, 3)):
         for line in chunk:
             agent.add_fact(line)
         i += chunk_size
+
 
 
 
