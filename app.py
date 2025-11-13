@@ -1,4 +1,7 @@
 # app.py
+st.set_page_config(page_title="Δ-Zero Chat", layout="wide")
+st.title("**Δ-Zero** – Adaptive Learning Chat")
+st.markdown("<sub style='color:#888'>by JCB • contextual • self-evolving • encrypted memory</sub>", unsafe_allow_html=True
 # --------------------------------------------------------------
 # Δ-Zero Chat – Contextual + Learning Conversational AI
 # by JCB
@@ -365,3 +368,4 @@ def bootstrap_ai(agent, n_rounds=5):
     st.success(f"Δ-Zero ready... start chatting and help me learn!")
 
 bootstrap_ai(agent, n_rounds=5)
+
