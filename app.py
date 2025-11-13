@@ -262,3 +262,61 @@ if prompt := st.chat_input("Talk to Δ-Zero • teach: fact to remember forever"
     st.session_state.history.append({"role": "bot", "text": response})
     st.session_state.last_idx = len(st.session_state.history) - 1
     st.rerun()
+
+import streamlit as st
+from pathlib import Path
+
+# ============================================================== #
+# LIVE2D AVATAR — reacts to personality + mood
+# ============================================================== #
+def show_avatar():
+    # Pick model (you can add more folders later)
+    model_path = Path("avatar/Mao")
+    if not model_path.exists():
+        st.error("Avatar folder not found! Place it in /avatar/Mao/")
+        return
+
+    # Determine current dominant personality for expression
+    weights = agent.w / agent.w.sum()
+    dominant = np.argmax(weights)
+    mood_val = mood if 'mood' in locals() else 5.0
+
+    # Map personality + mood → Live2D parameters
+    expressions = ["neutral", "happy", "admire", "serious", "sad"]
+    expression = expressions[dominant]
+    if mood_val > 7: expression = "happy"
+    if mood_val < 4: expression = "sad"
+
+    # Inject Cubism Web SDK + your model
+    html_code = f"""
+    <script src="https://cubism.live2d.com/sdk-web/cubismcore-4.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/live2dcubismframework@latest"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@live2d-widget/css/widget.css">
+    
+    <div id="live2d-widget" style="position:fixed; bottom:20px; right:20px; width:280px; height:420px; z-index:999;"></div>
+    
+    <script>
+    const modelPath = "/avatar/Mao/";
+    const widget = new LIVE2D.Live2DWidget({{
+        model: {{ path: modelPath + "Mao.model3.json" }},
+        scale: 0.12,
+        position: [0.75, 0.9],
+        idleMotionGroup: "Idle",
+        expressions: [
+            {{name: "neutral", file: modelPath + "expressions/neutral.exp3.json"}},
+            {{name: "happy",   file: modelPath + "expressions/happy.exp3.json"}},
+            {{name: "admire",  file: modelPath + "expressions/admire.exp3.json"}},
+            {{name: "serious", file: modelPath + "expressions/serious.exp3.json"}},
+            {{name: "sad",     file: modelPath + "expressions/sad.exp3.json"}}
+        ]
+    }});
+    
+    widget.show();
+    setTimeout(() => widget.model.setExpression("{expression}"), 1000);
+    </script>
+    """
+    
+    st.components.v1.html(html_code, height=500)
+
+# Call this once in your app (e.g., right after the title)
+show_avatar()
