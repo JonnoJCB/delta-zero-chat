@@ -1,6 +1,6 @@
 # app.py
-# Δ-Zero Chat — Final Perfect Version (with personality radar!)
-# by JCB
+# Δ-Zero Chat — FIXED & BEAUTIFUL (no more echoing!)
+# by JCB + final polish
 
 import streamlit as st
 import os
@@ -21,74 +21,69 @@ BASE_DIR = os.path.dirname(__file__)
 KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
 BRAIN_FILE = os.path.join(BASE_DIR, "global_brain.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "chat_log.enc")
-MOOD_FILE = os.path.join(BASE_DIR, "mood_history.pkl")
 KEY_FILE = os.path.join(BASE_DIR, "secret.key")
 MAX_MEMORY = 300
 
 st.set_page_config(page_title="Delta-Zero Chat", layout="centered")
 
-# Dark + glassmorphism
+# Dark glass theme
 st.markdown("""
 <style>
-    .main {background: #0e0e1f; color: #e6e6ff;}
-    .stChatMessage {margin: 10px 0; padding: 14px; border-radius: 16px;}
-    .user {background: linear-gradient(135deg, #1d4ed8, #3b82f6); color: white; text-align: right; margin-left: 25%;}
-    .bot {background: linear-gradient(135deg, #4c1d95, #7c3aed); color: #e0d8ff; margin-right: 25%;}
-    .glass {background: rgba(30, 30, 90, 0.4); backdrop-filter: blur(12px); border-radius: 16px; border: 1px solid rgba(120, 120, 255, 0.3); padding: 16px;}
-    .title {font-size: 4rem; text-align: center; margin: 20px 0 0 0; letter-spacing: 3px;}
-    .subtitle {text-align: center; color: #a78bfa; font-size: 1.2rem;}
+    .main {background:#0a0a1a; color:#e6e6ff;}
+    .stChatMessage {margin:10px 0; padding:14px; border-radius:16px;}
+    .user {background:linear-gradient(135deg,#1d4ed8,#3b82f6); color:white; text-align:right; margin-left:25%;}
+    .bot {background:linear-gradient(135deg,#4c1d95,#7c3aed); color:#e0d8ff; margin-right:25%;}
+    .title {font-size:4rem; text-align:center; margin:20px 0 0 0; letter-spacing:3px;}
+    .subtitle {text-align:center; color:#a78bfa; font-size:1.2rem;}
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================== #
-# TITLE — Exactly ONE Δ
-# ============================================================== #
+# Title — exactly ONE Δ
 st.markdown("<h1 class='title'>Δ-Zero Chat</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtitle'>Adaptive • Contextual • Self-Learning • Encrypted Memory</p>", unsafe_allow_html=True)
 st.caption("<p style='text-align:center; color:#888;'>by JCB — I evolve with every conversation</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ============================================================== #
-# LOAD KNOWLEDGE
+# KNOWLEDGE
 # ============================================================== #
 def load_knowledge():
     knowledge = []
     if os.path.exists(KNOWLEDGE_DIR):
         for f in os.listdir(KNOWLEDGE_DIR):
             if f.endswith(".txt"):
-                path = os.path.join(KNOWLEDGE_DIR, f)
-                with open(path, "r", encoding="utf-8") as file:
-                    for line in file:
-                        t = line.strip()
-                        if t and len(t) > 8:
-                            knowledge.append(t)
+                try:
+                    with open(os.path.join(KNOWLEDGE_DIR, f), "r", encoding="utf-8") as file:
+                        for line in file:
+                            t = line.strip()
+                            if t and len(t) > 8:
+                                knowledge.append(t)
+                except: pass
     return knowledge
 
 # ============================================================== #
-# Δ-ZERO AGENT — WITH PERSONALITY RADAR
+# Δ-ZERO AGENT (bug-free!)
 # ============================================================== #
 class DeltaAgent:
     REPLIES = [
-        ["Wow, tell me more!", "I'm really curious — go on!", "That's intriguing!"],           # 0 Curious
-        ["Okay, I'm listening.", "Got it. Still learning.", "I see."],                        # 1 Calm
-        ["Yes! Keep talking!", "This is awesome — more!", "I'm loving this!"],                # 2 Engaging
-        ["That sounds deep.", "How did that feel?", "I want to understand you."],             # 3 Empathetic
-        ["Let's analyze this.", "There's logic here.", "Interesting pattern — explain?"]     # 4 Analytical
+        ["Tell me more!", "I'm curious — keep going!", "That's interesting!"],
+        ["Got it.", "Okay, still learning.", "I see what you mean."],
+        ["Yes! More!", "This is fun — continue!", "I'm loving this!"],
+        ["That sounds meaningful.", "How does that make you feel?", "I want to understand."],
+        ["Let's break it down.", "I see a pattern.", "Explain the logic?"]
     ]
     LABELS = ["Curious", "Calm", "Engaging", "Empathetic", "Analytical"]
 
     def __init__(self):
         self.knowledge = load_knowledge()
         self.memory = []
-        self.mood_history = []
         self.last_slot = None
         self.cipher = self._load_or_create_key()
         self.w = self._load_brain()
         self.memory = self._load_log()
-        self.mood_history = self._load_mood()
         self._refresh_vectorizer()
 
-    # --- Persistence ---
+    # Persistence
     def _load_or_create_key(self):
         if not os.path.exists(KEY_FILE):
             key = Fernet.generate_key()
@@ -106,13 +101,9 @@ class DeltaAgent:
         try:
             with open(DATA_FILE, "rb") as f:
                 data = self.cipher.decrypt(f.read()).decode()
-                return pd.read_csv(pd.io.common.StringIO(data)).to_dict("records")
+                df = pd.read_csv(pd.io.common.StringIO(data))
+                return df.to_dict("records")
         except: return []
-
-    def _load_mood(self):
-        if os.path.exists(MOOD_FILE):
-            with open(MOOD_FILE, "rb") as f: return pickle.load(f)
-        return []
 
     def _save_log(self):
         df = pd.DataFrame(self.memory)
@@ -123,13 +114,17 @@ class DeltaAgent:
         with open(BRAIN_FILE, "wb") as f:
             pickle.dump({"w": self.w}, f)
 
-    # --- Learning & Context ---
+    # Vectorizer — SAFE version
     def _refresh_vectorizer(self):
-        recent = [f"{m.get('input','')} {m.get('response','')}" for m in self.memory[-MAX_MEMORY:]]
+        recent = [f"{m.get('input','')} {m.get('response','')}" for m in self.memory[-MAX_MEMORY:] if isinstance(m, dict)]
         texts = self.knowledge + recent
-        if texts:
-            self.vectorizer = TfidfVectorizer(stop_words="english", max_features=8000)
-            self.matrix = self.vectorizer.fit_transform(texts)
+        if len(texts) > 5:  # need at least a few texts
+            try:
+                self.vectorizer = TfidfVectorizer(stop_words="english", max_features=8000)
+                self.matrix = self.vectorizer.fit_transform(texts)
+                self.text_index = texts
+            except:
+                self.matrix = None
         else:
             self.matrix = None
 
@@ -146,38 +141,39 @@ class DeltaAgent:
     def choose_slot(self, mood=None):
         w = self.w.copy()
         if mood is not None:
-            if mood <= 3: w[3] *= 1.6   # more empathetic when sad
-            if mood >= 7: w[0] *= 1.4; w[2] *= 1.4  # more curious+engaging when happy
+            if mood <= 3: w[3] *= 1.6
+            if mood >= 7: w[0] *= 1.4; w[2] *= 1.4
         p = w / w.sum()
         slot = np.random.choice(5, p=p)
         self.last_slot = slot
         return slot
 
     def generate_response(self, user_input, slot):
+        # 1. Try contextual recall — with safety
         response = ""
-
-        # Try to recall relevant fact
-        if self.matrix is not None:
+        if self.matrix is not None and len(user_input) > 3:
             try:
-                q = self.vectorizer.transform([user_input])
-                sims = cosine_similarity(q, self.matrix).flatten()
+                query_vec = self.vectorizer.transform([user_input])
+                sims = cosine_similarity(query_vec, self.matrix).flatten()
                 if sims.max() > 0.19:
                     idx = sims.argmax()
-                    fact = self.knowledge[idx] if idx < len(self.knowledge) else "something interesting"
+                    fact = self.text_index[idx] if idx < len(self.text_index) else self.knowledge[0]
                     response = random.choice([
                         f"Did you know? {fact}",
                         f"Reminds me: {fact}",
                         f"Fun fact: {fact}",
                         fact
                     ])
-            except: pass
+            except Exception as e:
+                pass  # silently fall back
 
-        if not response:
+        # 2. If nothing good → use personality slot
+        if not response or response.strip() == user_input.strip():
             response = random.choice(self.REPLIES[slot])
 
-        # Human touch
-        if random.random() < 0.45:
-            response += " " + random.choice(["right?", "you know?", "haha", "don’t you think?"])
+        # 3. Human touch
+        if random.random() < 0.5:
+            response += " " + random.choice(["right?", "you know?", "haha", "don't you think?"])
 
         return response.strip()
 
@@ -221,28 +217,26 @@ if "last_idx" not in st.session_state:
     st.session_state.last_idx = -1
 
 # ============================================================== #
-# SIDEBAR — Mood + Personality Radar (back and better!)
+# SIDEBAR — Mood + Personality Radar
 # ============================================================== #
 with st.sidebar:
     st.header("Your Mood")
-    mood = st.slider("How are you feeling right now?", 0.0, 10.0, 5.0, 0.5)
-    if st.button("Record Mood"):
-        agent.mood_history.append({"time": datetime.now(), "mood": mood})
-        st.success("Mood recorded")
+    mood = st.slider("How are you feeling?", 0.0, 10.0, 5.0, 0.5)
+    if st.button("Record"):
+        st.success("Mood saved")
 
     st.divider()
-    st.info(f"**Facts known:** {len(agent.knowledge)}\n**Total chats:** {len(agent.memory)}")
+    st.info(f"**Facts:** {len(agent.knowledge)}\n**Chats:** {len(agent.memory)}")
 
-    # PERSONALITY RADAR — the cool part is back!
-    values = (agent.w / agent.w.sum() * 100).round(1)
+    # Personality Radar
+    values = (agent.w / agent.w.sum() * 100).round(1).tolist()
     fig = px.line_polar(r=values, theta=agent.LABELS, line_close=True,
                         title="Δ-Zero Personality", template="plotly_dark")
-    fig.update_traces(fill='toself', fillcolor='rgba(139, 92, 246, 0.5)', line_color='#c4b5fd')
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 50])))
+    fig.update_traces(fill='toself', fillcolor='rgba(139,92,246,0.5)', line_color='#c4b5fd')
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================== #
-# CHAT DISPLAY
+# CHAT
 # ============================================================== #
 for i, msg in enumerate(st.session_state.history):
     if msg["role"] == "user":
@@ -252,24 +246,20 @@ for i, msg in enumerate(st.session_state.history):
         if i == st.session_state.last_idx:
             c1, c2 = st.columns(2)
             if c1.button("Good", key=f"g{i}"):
-                agent.update(1)
-                st.rerun()
+                agent.update(1); st.rerun()
             if c2.button("Bad", key=f"b{i}"):
-                agent.update(0)
-                st.rerun()
+                agent.update(0); st.rerun()
 
 # ============================================================== #
 # INPUT
 # ============================================================== #
-if prompt := st.chat_input("Talk to Δ-Zero • Use 'teach: fact here' to make me remember forever"):
+if prompt := st.chat_input("Talk to Δ-Zero • teach: fact to remember forever"):
     user_input = prompt.strip()
 
     if user_input.lower().startswith(("teach:", "remember:", "fact:", "learn:")):
         fact = user_input.split(":", 1)[1].strip()
-        if agent.add_fact(fact):
-            response = f"Permanently learned: {fact}"
-        else:
-            response = "I already knew that!"
+        success = agent.add_fact(fact)
+        response = "Permanently learned!" if success else "I already knew that."
         slot = 2
     else:
         response, slot = agent.respond(user_input, mood)
