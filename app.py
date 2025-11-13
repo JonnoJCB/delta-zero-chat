@@ -50,11 +50,11 @@ def load_knowledge():
 # ============================================================== #
 class DeltaAgent:
     REPLIES = [
-        ["Wow, fascinating!", "I'm intrigued!", "That's wild!"],          # Curious
-        ["I get that.", "That makes sense.", "I hear you."],              # Calm
-        ["Tell me more about that!", "Go on!", "I love where this is going."], # Engaging
-        ["That sounds emotional.", "How did that make you feel?", "Interesting perspective."], # Empathetic
-        ["Let's analyze this a bit.", "Interesting pattern.", "I like the logic behind that."], # Analytical
+        ["Well it's nice to talk to someone - give me information?", "I'm intrigued! Can you explain and tell me a fact?", "Really? what makes you say that?"],          # Curious
+        ["I get that. But I'm still learning. Give me another fact?", "OK. Tell me more facts to help me understand.", "I hear you. But I need help understanding."],              # Calm
+        ["Tell me more about that! I'm learning from you!", "Give me more information!", "I love where this is going. Keep talking."], # Engaging
+        ["That sounds emotional.", "How did that make you feel? And what are feelings?", "Interesting perspective. But explain more?"], # Empathetic
+        ["Let's analyze this a bit. Tell me five random facts? It'll help me understand.", "Interesting pattern. Explain it?", "I like the logic behind that. Explain it more?"], # Analytical
     ]
 
     def __init__(self, n_slots=5, lr=0.07):
@@ -315,3 +315,4 @@ if st.sidebar.button("Show Learned Facts"):
             st.sidebar.text_area("Learned Knowledge", f.read(), height=250)
     else:
         st.sidebar.info("No learned facts yet.")
+
